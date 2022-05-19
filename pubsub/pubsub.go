@@ -20,8 +20,8 @@ type PubSub interface {
 	Init(metadata Metadata) error
 	Features() []Feature
 	Publish(req *PublishRequest) error
-	Subscribe(req SubscribeRequest, handler Handler) error
-	Close() error
+	Subscribe(ctx context.Context, req SubscribeRequest, handler Handler) error
+	ClosePublisher() error
 }
 
 // Handler is the handler used to invoke the app handler.
