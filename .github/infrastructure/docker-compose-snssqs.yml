@@ -7,4 +7,4 @@ services:
       SERVICES: "sns,sqs,sts"
       DEBUG: 1
     ports:
-      - 4566:4566
+      - 127.0.0.1:4566:4566

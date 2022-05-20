@@ -3,5 +3,5 @@ services:
   natsstreaming:
     image: nats-streaming:latest
     ports:
-      - "4222:4222"
-      - "8222:8222"
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"

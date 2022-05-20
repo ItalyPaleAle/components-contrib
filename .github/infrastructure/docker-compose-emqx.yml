@@ -5,4 +5,4 @@ services:
     hostname: emqx
     container_name: emqx
     ports:
-      - "1884:1883"
+      - "127.0.0.1:1884:1883"

@@ -10,4 +10,4 @@ services:
       MYSQL_USER: dapr
       MYSQL_PASSWORD: example
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
