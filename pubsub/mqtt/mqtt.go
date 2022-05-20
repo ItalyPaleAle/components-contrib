@@ -56,21 +56,21 @@ const (
 
 // mqttPubSub type allows sending and receiving data to/from MQTT broker.
 type mqttPubSub struct {
-	producer   mqtt.Client
-	consumer   mqtt.Client
-	metadata   *metadata
-	logger     logger.Logger
-	topics     map[string]pubsub.Handler
-	topicsLock sync.RWMutex
-	ctx        context.Context
-	cancel     context.CancelFunc
+	producer mqtt.Client
+	consumer mqtt.Client
+	metadata *metadata
+	logger   logger.Logger
+	topics   map[string]pubsub.Handler
+	subLock  sync.RWMutex
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 // NewMQTTPubSub returns a new mqttPubSub instance.
 func NewMQTTPubSub(logger logger.Logger) pubsub.PubSub {
 	return &mqttPubSub{
-		logger:     logger,
-		topicsLock: sync.RWMutex{},
+		logger:  logger,
+		subLock: sync.RWMutex{},
 	}
 }
 
@@ -189,6 +189,21 @@ func (m *mqttPubSub) Publish(req *pubsub.PublishRequest) error {
 	m.logger.Debugf("mqtt publishing topic %s", req.Topic)
 
 	token := m.producer.Publish(req.Topic, m.metadata.qos, m.metadata.retain, req.Data)
+	t := time.NewTimer(defaultWait)
+	defer func() {
+		if !t.Stop() {
+			<-t.C
+		}
+	}()
+	select {
+	case <-token.Done():
+		// Operation completed
+	case <-m.ctx.Done():
+		// Context canceled
+		return m.ctx.Err()
+	case <-t.C:
+		return fmt.Errorf("mqtt timeout while publishing")
+	}
 	if !token.WaitTimeout(defaultWait) || token.Error() != nil {
 		return fmt.Errorf("mqtt error from publish: %v", token.Error())
 	}
@@ -197,22 +212,58 @@ func (m *mqttPubSub) Publish(req *pubsub.PublishRequest) error {
 }
 
 // Subscribe to the mqtt pub sub topic.
-func (m *mqttPubSub) Subscribe(req pubsub.SubscribeRequest, handler pubsub.Handler) error {
-	m.topicsLock.Lock()
-	defer m.topicsLock.Unlock()
+func (m *mqttPubSub) Subscribe(ctx context.Context, req pubsub.SubscribeRequest, handler pubsub.Handler) error {
+	if ctxErr := m.ctx.Err(); ctxErr != nil {
+		// If the global context has been canceled, we do not allow more subscriptions
+		return ctxErr
+	}
 
+	m.subLock.Lock()
+	defer m.subLock.Unlock()
+
+	// Start the subscription
+	// When the connection is ready, add the topic
+	// Use the global context here to maintain the connection
+	m.startSubscription(m.ctx, func() {
+		m.topics[req.Topic] = handler
+	})
+
+	// Listen for context cancelation to remove the subscription
+	go func() {
+		<-ctx.Done()
+
+		m.subLock.Lock()
+		defer m.subLock.Unlock()
+
+		// If this is the last subscription, close the connection entirely
+		if len(m.topics) <= 1 {
+			m.consumer.Disconnect(0)
+			m.consumer = nil
+			return
+		}
+
+		// Reconnect with one less topic
+		m.startSubscription(m.ctx, func() {
+			delete(m.topics, req.Topic)
+		})
+	}()
+
+	return nil
+}
+
+func (m *mqttPubSub) startSubscription(ctx context.Context, onConnRready func()) error {
 	// reset synchronization
 	if m.consumer != nil {
-		m.logger.Infof("re-initializing the subscriber to add topic %s", req.Topic)
+		m.logger.Infof("re-initializing the subscriber")
 		m.consumer.Disconnect(0)
 		m.consumer = nil
 	} else {
-		m.logger.Infof("initializing the subscriber with topic %s", req.Topic)
+		m.logger.Infof("initializing the subscriber")
 	}
 
 	// mqtt broker allows only one connection at a given time from a clientID.
 	consumerClientID := fmt.Sprintf("%s-consumer", m.metadata.clientID)
-	connCtx, connCancel := context.WithTimeout(m.ctx, defaultWait)
+	connCtx, connCancel := context.WithTimeout(ctx, defaultWait)
 	c, err := m.connect(connCtx, consumerClientID)
 	connCancel()
 	if err != nil {
@@ -220,7 +271,8 @@ func (m *mqttPubSub) Subscribe(req pubsub.SubscribeRequest, handler pubsub.Handl
 	}
 	m.consumer = c
 
-	m.topics[req.Topic] = handler
+	// Invoke onConnReady so changes to the topics can be made safely
+	onConnRready()
 
 	subscribeTopics := make(map[string]byte, len(m.topics))
 	for k := range m.topics {
@@ -230,45 +282,7 @@ func (m *mqttPubSub) Subscribe(req pubsub.SubscribeRequest, handler pubsub.Handl
 	go func() {
 		token := m.consumer.SubscribeMultiple(
 			subscribeTopics,
-			func(client mqtt.Client, mqttMsg mqtt.Message) {
-				mqttMsg.AutoAckOff()
-				msg := pubsub.NewMessage{
-					Topic: mqttMsg.Topic(),
-					Data:  mqttMsg.Payload(),
-				}
-
-				m.topicsLock.RLock()
-				topicHandler, ok := m.topics[msg.Topic]
-				m.topicsLock.RUnlock()
-				if !ok || topicHandler == nil {
-					m.logger.Errorf("no handler defined for topic %s", msg.Topic)
-					return
-				}
-
-				// TODO: Make the backoff configurable for constant or exponential
-				var b backoff.BackOff = backoff.NewConstantBackOff(5 * time.Second)
-				b = backoff.WithContext(b, m.ctx)
-				if m.metadata.backOffMaxRetries >= 0 {
-					b = backoff.WithMaxRetries(b, uint64(m.metadata.backOffMaxRetries))
-				}
-				if err := retry.NotifyRecover(func() error {
-					m.logger.Debugf("Processing MQTT message %s/%d", mqttMsg.Topic(), mqttMsg.MessageID())
-
-					if err := topicHandler(m.ctx, &msg); err != nil {
-						return err
-					}
-
-					mqttMsg.Ack()
-
-					return nil
-				}, b, func(err error, d time.Duration) {
-					m.logger.Errorf("Error processing MQTT message: %s/%d. Retrying...", mqttMsg.Topic(), mqttMsg.MessageID())
-				}, func() {
-					m.logger.Infof("Successfully processed MQTT message after it previously failed: %s/%d", mqttMsg.Topic(), mqttMsg.MessageID())
-				}); err != nil {
-					m.logger.Errorf("Failed processing MQTT message: %s/%d: %v", mqttMsg.Topic(), mqttMsg.MessageID(), err)
-				}
-			},
+			m.onMessage(ctx),
 		)
 		if err := token.Error(); err != nil {
 			m.logger.Errorf("mqtt error from subscribe: %v", err)
@@ -276,6 +290,49 @@ func (m *mqttPubSub) Subscribe(req pubsub.SubscribeRequest, handler pubsub.Handl
 	}()
 
 	return nil
+}
+
+// onMessage returns the callback to be invoked when there's a new message from a topic
+func (m *mqttPubSub) onMessage(ctx context.Context) func(client mqtt.Client, mqttMsg mqtt.Message) {
+	return func(client mqtt.Client, mqttMsg mqtt.Message) {
+		mqttMsg.AutoAckOff()
+		msg := pubsub.NewMessage{
+			Topic: mqttMsg.Topic(),
+			Data:  mqttMsg.Payload(),
+		}
+
+		m.subLock.RLock()
+		topicHandler, ok := m.topics[msg.Topic]
+		m.subLock.RUnlock()
+		if !ok || topicHandler == nil {
+			m.logger.Errorf("no handler defined for topic %s", msg.Topic)
+			return
+		}
+
+		// TODO: Make the backoff configurable for constant or exponential
+		var b backoff.BackOff = backoff.NewConstantBackOff(5 * time.Second)
+		b = backoff.WithContext(b, ctx)
+		if m.metadata.backOffMaxRetries >= 0 {
+			b = backoff.WithMaxRetries(b, uint64(m.metadata.backOffMaxRetries))
+		}
+		if err := retry.NotifyRecover(func() error {
+			m.logger.Debugf("Processing MQTT message %s/%d", mqttMsg.Topic(), mqttMsg.MessageID())
+
+			if err := topicHandler(ctx, &msg); err != nil {
+				return err
+			}
+
+			mqttMsg.Ack()
+
+			return nil
+		}, b, func(err error, d time.Duration) {
+			m.logger.Errorf("Error processing MQTT message: %s/%d. Retrying...", mqttMsg.Topic(), mqttMsg.MessageID())
+		}, func() {
+			m.logger.Infof("Successfully processed MQTT message after it previously failed: %s/%d", mqttMsg.Topic(), mqttMsg.MessageID())
+		}); err != nil {
+			m.logger.Errorf("Failed processing MQTT message: %s/%d: %v", mqttMsg.Topic(), mqttMsg.MessageID(), err)
+		}
+	}
 }
 
 func (m *mqttPubSub) connect(ctx context.Context, clientID string) (mqtt.Client, error) {
@@ -345,6 +402,9 @@ func (m *mqttPubSub) createClientOptions(uri *url.URL, clientID string) *mqtt.Cl
 }
 
 func (m *mqttPubSub) Close() error {
+	m.subLock.Lock()
+	defer m.subLock.Unlock()
+
 	m.cancel()
 
 	if m.consumer != nil {
