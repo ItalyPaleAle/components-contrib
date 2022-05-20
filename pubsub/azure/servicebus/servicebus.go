@@ -601,7 +601,7 @@ func (a *azureServiceBus) createSubscriptionProperties() (*sbadmin.SubscriptionP
 	return properties, nil
 }
 
-func (a *azureServiceBus) ClosePublisher() (err error) {
+func (a *azureServiceBus) Close() (err error) {
 	a.topicsLock.Lock()
 	defer a.topicsLock.Unlock()
 

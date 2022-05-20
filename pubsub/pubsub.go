@@ -21,7 +21,7 @@ type PubSub interface {
 	Features() []Feature
 	Publish(req *PublishRequest) error
 	Subscribe(ctx context.Context, req SubscribeRequest, handler Handler) error
-	ClosePublisher() error
+	Close() error
 }
 
 // Handler is the handler used to invoke the app handler.

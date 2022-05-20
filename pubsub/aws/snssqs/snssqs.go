@@ -838,7 +838,7 @@ func (s *snsSqs) Publish(req *pubsub.PublishRequest) error {
 	return nil
 }
 
-func (s *snsSqs) ClosePublisher() error {
+func (s *snsSqs) Close() error {
 	s.publishCancel()
 
 	return nil

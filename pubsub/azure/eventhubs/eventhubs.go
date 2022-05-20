@@ -617,7 +617,7 @@ func (aeh *AzureEventHubs) Subscribe(subscribeCtx context.Context, req pubsub.Su
 	return nil
 }
 
-func (aeh *AzureEventHubs) ClosePublisher() (err error) {
+func (aeh *AzureEventHubs) Close() (err error) {
 	aeh.publishCancel()
 
 	flag := false
