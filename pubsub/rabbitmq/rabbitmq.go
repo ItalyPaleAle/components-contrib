@@ -70,16 +70,15 @@ type rabbitMQ struct {
 	channel           rabbitMQChannelBroker
 	channelMutex      sync.RWMutex
 	connectionCount   int
-	stopped           bool
 	metadata          *metadata
 	declaredExchanges map[string]bool
+	ctx               context.Context
+	cancel            context.CancelFunc
 
 	connectionDial func(host string) (rabbitMQConnectionBroker, rabbitMQChannelBroker, error)
 
 	logger        logger.Logger
 	backOffConfig retry.Config
-	ctx           context.Context
-	cancel        context.CancelFunc
 }
 
 // interface used to allow unit testing.
@@ -104,7 +103,6 @@ type rabbitMQConnectionBroker interface {
 func NewRabbitMQ(logger logger.Logger) pubsub.PubSub {
 	return &rabbitMQ{
 		declaredExchanges: make(map[string]bool),
-		stopped:           false,
 		logger:            logger,
 		connectionDial:    dial,
 	}
@@ -143,6 +141,7 @@ func (r *rabbitMQ) Init(metadata pubsub.Metadata) error {
 	}
 
 	r.ctx, r.cancel = context.WithCancel(context.Background())
+
 	r.metadata = meta
 	r.reconnect(0)
 	// We do not return error on reconnect because it can cause problems if init() happens
@@ -155,12 +154,7 @@ func (r *rabbitMQ) reconnect(connectionCount int) error {
 	r.channelMutex.Lock()
 	defer r.channelMutex.Unlock()
 
-	return r.doReconnect(connectionCount)
-}
-
-// this function call should be wrapped by channelMutex.
-func (r *rabbitMQ) doReconnect(connectionCount int) error {
-	if r.stopped {
+	if r.isStopped() {
 		// Do not reconnect on stopped service.
 		return errors.New("cannot connect after component is stopped")
 	}
@@ -248,7 +242,7 @@ func (r *rabbitMQ) Publish(req *pubsub.PublishRequest) error {
 	}
 }
 
-func (r *rabbitMQ) Subscribe(req pubsub.SubscribeRequest, handler pubsub.Handler) error {
+func (r *rabbitMQ) Subscribe(ctx context.Context, req pubsub.SubscribeRequest, handler pubsub.Handler) error {
 	if r.metadata.consumerID == "" {
 		return errors.New("consumerID is required for subscriptions")
 	}
@@ -256,14 +250,14 @@ func (r *rabbitMQ) Subscribe(req pubsub.SubscribeRequest, handler pubsub.Handler
 	queueName := fmt.Sprintf("%s-%s", r.metadata.consumerID, req.Topic)
 	r.logger.Infof("%s subscribe to topic/queue '%s/%s'", logMessagePrefix, req.Topic, queueName)
 
+	// Do not set a timeout on the context, as we're just waiting for the first ack; we're using a semaphore instead
 	ackCh := make(chan struct{}, 1)
-	ctx, cancel := context.WithTimeout(r.ctx, time.Minute)
-	defer cancel()
+	defer close(ackCh)
+	go r.subscribeForever(ctx, req, queueName, handler, ackCh)
 
-	go r.subscribeForever(req, queueName, handler, ackCh)
-
+	// Wait for the ack for 1 minute or return an error
 	select {
-	case <-ctx.Done():
+	case <-time.After(time.Minute):
 		return fmt.Errorf("failed to subscribe to %s", queueName)
 	case <-ackCh:
 		return nil
@@ -356,10 +350,7 @@ func (r *rabbitMQ) ensureSubscription(req pubsub.SubscribeRequest, queueName str
 	return r.channel, r.connectionCount, q, err
 }
 
-func (r *rabbitMQ) subscribeForever(req pubsub.SubscribeRequest, queueName string, handler pubsub.Handler, ackCh chan struct{}) {
-	// one-time notification on successful subscribe
-	var subscribed bool
-
+func (r *rabbitMQ) subscribeForever(ctx context.Context, req pubsub.SubscribeRequest, queueName string, handler pubsub.Handler, ackCh chan struct{}) {
 	for {
 		var (
 			err             error
@@ -390,22 +381,27 @@ func (r *rabbitMQ) subscribeForever(req pubsub.SubscribeRequest, queueName strin
 				break
 			}
 
-			if !subscribed {
-				subscribed = true
+			// one-time notification on successful subscribe
+			if ackCh != nil {
 				ackCh <- struct{}{}
 				ackCh = nil
 			}
 
-			err = r.listenMessages(channel, msgs, req.Topic, handler)
+			err = r.listenMessages(ctx, channel, msgs, req.Topic, handler)
 			if err != nil {
 				errFuncName = "listenMessages"
 				break
 			}
 		}
 
+		if err == context.Canceled || err == context.DeadlineExceeded {
+			// Subscription context was canceled
+			r.logger.Infof("%s subscription for %s has context canceled", logMessagePrefix, queueName)
+			return
+		}
+
 		if r.isStopped() {
 			r.logger.Infof("%s subscriber for %s is stopped", logMessagePrefix, queueName)
-
 			return
 		}
 
@@ -422,34 +418,37 @@ func (r *rabbitMQ) subscribeForever(req pubsub.SubscribeRequest, queueName strin
 	}
 }
 
-func (r *rabbitMQ) listenMessages(channel rabbitMQChannelBroker, msgs <-chan amqp.Delivery, topic string, handler pubsub.Handler) error {
+func (r *rabbitMQ) listenMessages(ctx context.Context, channel rabbitMQChannelBroker, msgCh <-chan amqp.Delivery, topic string, handler pubsub.Handler) error {
 	var err error
-	for d := range msgs {
-		switch r.metadata.concurrency {
-		case pubsub.Single:
-			err = r.handleMessage(channel, d, topic, handler)
-		case pubsub.Parallel:
-			go func(channel rabbitMQChannelBroker, d amqp.Delivery, topic string, handler pubsub.Handler) {
-				err = r.handleMessage(channel, d, topic, handler)
-			}(channel, d, topic, handler)
-		}
-		if (err != nil) && mustReconnect(channel, err) {
-			return err
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case d := <-msgCh:
+			switch r.metadata.concurrency {
+			case pubsub.Single:
+				err = r.handleMessage(ctx, d, topic, handler)
+			case pubsub.Parallel:
+				go func(d amqp.Delivery) {
+					err = r.handleMessage(ctx, d, topic, handler)
+				}(d)
+			}
+			if err != nil && mustReconnect(channel, err) {
+				return err
+			}
 		}
 	}
-
-	return nil
 }
 
-func (r *rabbitMQ) handleMessage(channel rabbitMQChannelBroker, d amqp.Delivery, topic string, handler pubsub.Handler) error {
+func (r *rabbitMQ) handleMessage(ctx context.Context, d amqp.Delivery, topic string, handler pubsub.Handler) error {
 	pubsubMsg := &pubsub.NewMessage{
 		Data:  d.Body,
 		Topic: topic,
 	}
 
-	b := r.backOffConfig.NewBackOffWithContext(r.ctx)
+	b := r.backOffConfig.NewBackOffWithContext(ctx)
 	err := retry.NotifyRecover(func() error {
-		return handler(r.ctx, pubsubMsg)
+		return handler(ctx, pubsubMsg)
 	}, b, func(err error, d time.Duration) {
 		r.logger.Errorf("%s error handling message from topic '%s', %s", logMessagePrefix, topic, err)
 	}, func() {
@@ -532,19 +531,15 @@ func (r *rabbitMQ) reset() (err error) {
 }
 
 func (r *rabbitMQ) isStopped() bool {
-	r.channelMutex.RLock()
-	defer r.channelMutex.RUnlock()
-
-	return r.stopped
+	return r.ctx.Err() != nil
 }
 
 func (r *rabbitMQ) Close() error {
 	r.channelMutex.Lock()
 	defer r.channelMutex.Unlock()
 
-	err := r.reset()
-	r.stopped = true
 	r.cancel()
+	err := r.reset()
 
 	return err
 }
