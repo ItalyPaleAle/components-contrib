@@ -15,6 +15,7 @@ package kafka
 
 import (
 	"context"
+	"sync"
 
 	"github.com/dapr/kit/logger"
 
@@ -25,17 +26,22 @@ import (
 type PubSub struct {
 	kafka  *kafka.Kafka
 	topics map[string]bool
+	lock   sync.Mutex
 }
 
 func (p *PubSub) Init(metadata pubsub.Metadata) error {
 	p.topics = make(map[string]bool)
+	p.lock = sync.Mutex{}
 	return p.kafka.Init(metadata.Properties)
 }
 
-func (p *PubSub) Subscribe(req pubsub.SubscribeRequest, handler pubsub.Handler) error {
+func (p *PubSub) Subscribe(ctx context.Context, req pubsub.SubscribeRequest, handler pubsub.Handler) error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
 	topics := p.addTopic(req.Topic)
 
-	return p.kafka.Subscribe(topics, req.Metadata, newSubscribeAdapter(handler).adapter)
+	return p.kafka.Subscribe(ctx, topics, req.Metadata, newSubscribeAdapter(handler).adapter)
 }
 
 func (p *PubSub) addTopic(newTopic string) []string {

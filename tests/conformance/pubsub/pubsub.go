@@ -101,13 +101,14 @@ func ConformanceTests(t *testing.T, props map[string]string, ps pubsub.PubSub, c
 	errorCount := 0
 	dataPrefix := "message-" + runID + "-"
 	var outOfOrder bool
+	ctx := context.Background()
 
 	// Subscribe
 	if config.HasOperation("subscribe") { // nolint: nestif
 		t.Run("subscribe", func(t *testing.T) {
 			var counter int
 			var lastSequence int
-			err := ps.Subscribe(pubsub.SubscribeRequest{
+			err := ps.Subscribe(ctx, pubsub.SubscribeRequest{
 				Topic:    config.TestTopicName,
 				Metadata: config.SubscribeMetadata,
 			}, func(ctx context.Context, msg *pubsub.NewMessage) error {
