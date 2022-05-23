@@ -239,6 +239,7 @@ func (m *mqttPubSub) Subscribe(ctx context.Context, req pubsub.SubscribeRequest,
 		if len(m.topics) <= 1 {
 			m.consumer.Disconnect(0)
 			m.consumer = nil
+			delete(m.topics, req.Topic)
 			return
 		}
 
