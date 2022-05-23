@@ -290,6 +290,9 @@ func (a *azureServiceBus) Init(metadata pubsub.Metadata) (err error) {
 
 func (a *azureServiceBus) Publish(req *pubsub.PublishRequest) error {
 	sender, err := a.senderForTopic(a.publishCtx, req.Topic)
+	if err != nil {
+		return err
+	}
 
 	// a.logger.Debugf("Creating message with body: %s", string(req.Data))
 	msg, err := NewASBMessageFromPubsubRequest(req)
@@ -448,7 +451,7 @@ func (a *azureServiceBus) senderForTopic(ctx context.Context, topic string) (*se
 	a.topicsLock.RLock()
 	sender, ok := a.topics[topic]
 	a.topicsLock.RUnlock()
-	if ok {
+	if ok && sender != nil {
 		return sender, nil
 	}
 
@@ -609,20 +612,20 @@ func (a *azureServiceBus) Close() (err error) {
 
 	// Close all topics, up to 3 in parallel
 	workersCh := make(chan bool, 3)
-	for _, t := range a.topics {
-		// Blocks if we have too many workers
+	for k, t := range a.topics {
+		// Blocks if we have too many goroutines
 		workersCh <- true
-		go func(t *servicebus.Sender) {
-			a.logger.Debugf("Closing topic %s", t)
+		go func(k string, t *servicebus.Sender) {
+			a.logger.Debugf("Closing topic %s", k)
 			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(a.metadata.TimeoutInSec)*time.Second)
 			err = t.Close(ctx)
 			cancel()
 			if err != nil {
 				// Log only
-				a.logger.Warnf("%s closing topic %s: %+v", errorMessagePrefix, t, err)
+				a.logger.Warnf("%s closing topic %s: %+v", errorMessagePrefix, k, err)
 			}
 			<-workersCh
-		}(t)
+		}(k, t)
 	}
 	for i := 0; i < cap(workersCh); i++ {
 		// Wait for all workers to be done
