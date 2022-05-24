@@ -252,7 +252,6 @@ func ConformanceTests(t *testing.T, props map[string]string, ps pubsub.PubSub, c
 				})
 				assert.NoError(t, err, "expected no error on publishing data %s on topic %s", data, topic)
 			}
-
 			t.Logf("waiting for %v to complete read", config.MaxReadDuration)
 
 			receivedTopic1 := make([]string, 0)
@@ -263,12 +262,12 @@ func ConformanceTests(t *testing.T, props map[string]string, ps pubsub.PubSub, c
 				select {
 				case msg := <-topic1Ch:
 					receivedTopic1 = append(receivedTopic1, msg)
-					if compareReceivedAndExpected(receivedTopic2, expectTopic2) && compareReceivedAndExpected(receivedTopic2, expectTopic2) {
+					if compareReceivedAndExpected(receivedTopic1, expectTopic1) && compareReceivedAndExpected(receivedTopic2, expectTopic2) {
 						break loop
 					}
 				case msg := <-topic2Ch:
 					receivedTopic2 = append(receivedTopic2, msg)
-					if compareReceivedAndExpected(receivedTopic2, expectTopic2) && compareReceivedAndExpected(receivedTopic2, expectTopic2) {
+					if compareReceivedAndExpected(receivedTopic1, expectTopic1) && compareReceivedAndExpected(receivedTopic2, expectTopic2) {
 						break loop
 					}
 				case <-timeout:
