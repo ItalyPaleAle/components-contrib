@@ -230,9 +230,9 @@ func ConformanceTests(t *testing.T, props map[string]string, ps pubsub.PubSub, c
 	if config.HasOperation("multiplehandlers") {
 		t.Run("mutiple handlers", func(t *testing.T) {
 			topic1Ch := make(chan string, config.MessageCount)
-			createMultiSubscriber(t, context.Background(), topic1Ch, ps, config.TestMultiTopic1Name, config.SubscribeMetadata, dataPrefix)
+			createMultiSubscriber(t, topic1Ch, ps, config.TestMultiTopic1Name, config.SubscribeMetadata, dataPrefix)
 			topic2Ch := make(chan string, config.MessageCount)
-			createMultiSubscriber(t, context.Background(), topic2Ch, ps, config.TestMultiTopic2Name, config.SubscribeMetadata, dataPrefix)
+			createMultiSubscriber(t, topic2Ch, ps, config.TestMultiTopic2Name, config.SubscribeMetadata, dataPrefix)
 
 			expectTopic1 := make([]string, 0)
 			expectTopic2 := make([]string, 0)
@@ -287,8 +287,8 @@ func compareReceivedAndExpected(received []string, expected []string) bool {
 	return reflect.DeepEqual(received, expected)
 }
 
-func createMultiSubscriber(t *testing.T, subscribeCtx context.Context, ch chan<- string, ps pubsub.PubSub, topic string, subscribeMetadata map[string]string, dataPrefix string) {
-	err := ps.Subscribe(subscribeCtx, pubsub.SubscribeRequest{
+func createMultiSubscriber(t *testing.T, ch chan<- string, ps pubsub.PubSub, topic string, subscribeMetadata map[string]string, dataPrefix string) {
+	err := ps.Subscribe(pubsub.SubscribeRequest{
 		Topic:    topic,
 		Metadata: subscribeMetadata,
 	}, func(ctx context.Context, msg *pubsub.NewMessage) error {
