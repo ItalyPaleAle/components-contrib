@@ -58,12 +58,12 @@ func (a *bus) Subscribe(ctx context.Context, req pubsub.SubscribeRequest, handle
 		for i := 0; i < 10; i++ {
 			handleErr := handler(ctx, &pubsub.NewMessage{Data: data, Topic: req.Topic, Metadata: req.Metadata})
 			if handleErr == nil {
-				return
+				break
 			}
 			a.log.Error(handleErr)
 		}
 	}
-	err := a.bus.Subscribe(req.Topic, retryHandler)
+	err := a.bus.SubscribeAsync(req.Topic, retryHandler, true)
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,10 @@ func (a *bus) Subscribe(ctx context.Context, req pubsub.SubscribeRequest, handle
 	// Unsubscribe when context is done
 	go func() {
 		<-ctx.Done()
-		a.bus.Unsubscribe(req.Topic, retryHandler)
+		err := a.bus.Unsubscribe(req.Topic, retryHandler)
+		if err != nil {
+			a.log.Errorf("error while unsubscribing from topic %s: %v", req.Topic, err)
+		}
 	}()
 
 	return nil
