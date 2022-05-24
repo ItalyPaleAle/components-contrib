@@ -106,7 +106,7 @@ func ConformanceTests(t *testing.T, props map[string]string, ps pubsub.PubSub, c
 	awaitingMessages := make(map[string]struct{}, 20)
 	var mu sync.Mutex
 	processedMessages := make(map[int]struct{}, 20)
-	processedC := make(chan string)
+	processedC := make(chan string, config.MessageCount*2)
 	errorCount := 0
 	dataPrefix := "message-" + runID + "-"
 	var outOfOrder bool
@@ -229,8 +229,10 @@ func ConformanceTests(t *testing.T, props map[string]string, ps pubsub.PubSub, c
 	// Multiple handlers
 	if config.HasOperation("multiplehandlers") {
 		t.Run("mutiple handlers", func(t *testing.T) {
-			topic1Ch := createMultiSubscriber(t, ps, config.TestMultiTopic1Name, config.SubscribeMetadata, dataPrefix)
-			topic2Ch := createMultiSubscriber(t, ps, config.TestMultiTopic2Name, config.SubscribeMetadata, dataPrefix)
+			topic1Ch := make(chan string, config.MessageCount)
+			createMultiSubscriber(t, context.Background(), topic1Ch, ps, config.TestMultiTopic1Name, config.SubscribeMetadata, dataPrefix)
+			topic2Ch := make(chan string, config.MessageCount)
+			createMultiSubscriber(t, context.Background(), topic2Ch, ps, config.TestMultiTopic2Name, config.SubscribeMetadata, dataPrefix)
 
 			expectTopic1 := make([]string, 0)
 			expectTopic2 := make([]string, 0)
@@ -285,9 +287,8 @@ func compareReceivedAndExpected(received []string, expected []string) bool {
 	return reflect.DeepEqual(received, expected)
 }
 
-func createMultiSubscriber(t *testing.T, ps pubsub.PubSub, topic string, subscribeMetadata map[string]string, dataPrefix string) chan string {
-	ch := make(chan string)
-	err := ps.Subscribe(pubsub.SubscribeRequest{
+func createMultiSubscriber(t *testing.T, subscribeCtx context.Context, ch chan<- string, ps pubsub.PubSub, topic string, subscribeMetadata map[string]string, dataPrefix string) {
+	err := ps.Subscribe(subscribeCtx, pubsub.SubscribeRequest{
 		Topic:    topic,
 		Metadata: subscribeMetadata,
 	}, func(ctx context.Context, msg *pubsub.NewMessage) error {
@@ -300,5 +301,4 @@ func createMultiSubscriber(t *testing.T, ps pubsub.PubSub, topic string, subscri
 		return nil
 	})
 	require.NoError(t, err, "expected no error on subscribe")
-	return ch
 }
