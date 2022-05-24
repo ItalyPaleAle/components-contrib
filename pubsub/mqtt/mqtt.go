@@ -231,13 +231,12 @@ func (m *mqttPubSub) Subscribe(ctx context.Context, req pubsub.SubscribeRequest,
 	// Listen for context cancelation to remove the subscription
 	go func() {
 		<-ctx.Done()
-
 		m.subLock.Lock()
 		defer m.subLock.Unlock()
 
 		// If this is the last subscription, close the connection entirely
 		if len(m.topics) <= 1 {
-			m.consumer.Disconnect(0)
+			m.consumer.Disconnect(5)
 			m.consumer = nil
 			delete(m.topics, req.Topic)
 			return
@@ -254,9 +253,9 @@ func (m *mqttPubSub) Subscribe(ctx context.Context, req pubsub.SubscribeRequest,
 
 func (m *mqttPubSub) startSubscription(ctx context.Context, onConnRready func()) error {
 	// reset synchronization
-	if m.consumer != nil {
+	if m.consumer != nil && m.consumer.IsConnectionOpen() {
 		m.logger.Infof("re-initializing the subscriber")
-		m.consumer.Disconnect(0)
+		m.consumer.Disconnect(5)
 		m.consumer = nil
 	} else {
 		m.logger.Infof("initializing the subscriber")
@@ -280,15 +279,21 @@ func (m *mqttPubSub) startSubscription(ctx context.Context, onConnRready func())
 		subscribeTopics[k] = m.metadata.qos
 	}
 
-	go func() {
-		token := m.consumer.SubscribeMultiple(
-			subscribeTopics,
-			m.onMessage(ctx),
-		)
-		if err := token.Error(); err != nil {
-			m.logger.Errorf("mqtt error from subscribe: %v", err)
-		}
-	}()
+	token := m.consumer.SubscribeMultiple(
+		subscribeTopics,
+		m.onMessage(ctx),
+	)
+	subscribeCtx, subscribeCancel := context.WithTimeout(m.ctx, defaultWait)
+	defer subscribeCancel()
+	select {
+	case <-token.Done():
+		// Subscription went through
+	case <-subscribeCtx.Done():
+		return subscribeCtx.Err()
+	}
+	if err := token.Error(); err != nil {
+		return fmt.Errorf("mqtt error from subscribe: %v", err)
+	}
 
 	return nil
 }
@@ -409,9 +414,9 @@ func (m *mqttPubSub) Close() error {
 	m.cancel()
 
 	if m.consumer != nil {
-		m.consumer.Disconnect(0)
+		m.consumer.Disconnect(5)
 	}
-	m.producer.Disconnect(0)
+	m.producer.Disconnect(5)
 
 	return nil
 }
