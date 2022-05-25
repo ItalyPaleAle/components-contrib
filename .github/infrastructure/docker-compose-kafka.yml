@@ -3,11 +3,11 @@ services:
   zookeeper:
     image: wurstmeister/zookeeper:latest
     ports:
-      - "127.0.0.1:2181:2181"
+      - "2181:2181"
   kafka:
     image: wurstmeister/kafka:latest
     ports:
-      - "127.0.0.1:9092:9092"
+      - "9092:9092"
     environment:
       KAFKA_ADVERTISED_HOST_NAME: 127.0.0.1
       KAFKA_CREATE_TOPICS: "binding-topic:1:1"

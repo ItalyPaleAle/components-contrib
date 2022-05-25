@@ -6,7 +6,7 @@ services:
     command: start-single-node --cluster-name=single-node --logtostderr=WARNING --log-file-verbosity=WARNING --insecure
     restart: always
     ports:
-      - "127.0.0.1:26257:26257"
+      - "26257:26257"
 
   cockroachdb-init:
     hostname: cockroachdb-init

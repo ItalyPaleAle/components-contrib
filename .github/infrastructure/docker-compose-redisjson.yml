@@ -3,6 +3,6 @@ services:
   redis:
     image: redislabs/rejson:2.0.6
     ports:
-      - "127.0.0.1:6379:6379"
+      - "6379:6379"
     environment:
       - REDIS_REPLICATION_MODE=master
