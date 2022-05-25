@@ -174,7 +174,8 @@ func (s *snsSqs) Init(metadata pubsub.Metadata) error {
 	s.opsTimeout = time.Duration(md.assetsManagementTimeoutSeconds * float64(time.Second))
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
-	if err := s.setAwsAccountIDIfNotProvided(s.ctx); err != nil {
+	err = s.setAwsAccountIDIfNotProvided(s.ctx)
+	if err != nil {
 		return err
 	}
 
@@ -420,6 +421,7 @@ func (s *snsSqs) removeSnsSqsSubscription(parentCtx context.Context, subscriptio
 
 	return nil
 }
+
 func (s *snsSqs) getSnsSqsSubscriptionArn(parentCtx context.Context, topicArn string) (string, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, s.opsTimeout)
 	listSubscriptionsOutput, err := s.snsClient.ListSubscriptionsByTopicWithContext(ctx, &sns.ListSubscriptionsByTopicInput{TopicArn: aws.String(topicArn)})
@@ -818,7 +820,8 @@ func (s *snsSqs) Subscribe(subscribeCtx context.Context, req pubsub.SubscribeReq
 			return wrappedErr
 		}
 
-		if err := s.setDeadLettersQueueAttributes(subscribeCtx, queueInfo, deadLettersQueueInfo); err != nil {
+		err = s.setDeadLettersQueueAttributes(subscribeCtx, queueInfo, deadLettersQueueInfo)
+		if err != nil {
 			wrappedErr := fmt.Errorf("error creating dead-letter queue: %w", err)
 			s.logger.Error(wrappedErr)
 
@@ -869,8 +872,7 @@ func (s *snsSqs) Subscribe(subscribeCtx context.Context, req pubsub.SubscribeReq
 		if !s.metadata.disableEntityManagement {
 			// Use a background context because subscribeCtx is canceled already
 			// Error is logged already
-			_ = subscriptionArn
-			//_ = s.removeSnsSqsSubscription(s.ctx, subscriptionArn)
+			_ = s.removeSnsSqsSubscription(s.ctx, subscriptionArn)
 		}
 
 		// If we don't have any topic left, close the poller

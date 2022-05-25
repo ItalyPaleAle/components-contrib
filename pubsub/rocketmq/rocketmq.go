@@ -197,7 +197,6 @@ func (r *rocketMQ) Publish(req *pubsub.PublishRequest) error {
 			r.logger.Infof("rocketmq successfully sent message after it previously failed. topic:%s.", msg.Topic)
 		},
 	)
-
 }
 
 func newRocketMQMessage(req *pubsub.PublishRequest) *primitive.Message {
@@ -338,7 +337,7 @@ func (r *rocketMQ) startSubscription(ctx context.Context, onConnRready func()) (
 
 	for topic, data := range r.topics {
 		cb := r.adaptCallback(topic, r.metadata.ConsumerGroup, string(data.selector.Type), data.selector.Expression, data.handler)
-		err := r.consumer.Subscribe(topic, data.selector, cb)
+		err = r.consumer.Subscribe(topic, data.selector, cb)
 		if err != nil {
 			r.logger.Errorf("subscribe topic:%v failed,error:%v", topic, err)
 			continue
