@@ -56,21 +56,21 @@ const (
 
 // mqttPubSub type allows sending and receiving data to/from MQTT broker.
 type mqttPubSub struct {
-	producer mqtt.Client
-	consumer mqtt.Client
-	metadata *metadata
-	logger   logger.Logger
-	topics   map[string]pubsub.Handler
-	subLock  sync.RWMutex
-	ctx      context.Context
-	cancel   context.CancelFunc
+	producer        mqtt.Client
+	consumer        mqtt.Client
+	metadata        *metadata
+	logger          logger.Logger
+	topics          map[string]pubsub.Handler
+	subscribingLock sync.Mutex
+	ctx             context.Context
+	cancel          context.CancelFunc
 }
 
 // NewMQTTPubSub returns a new mqttPubSub instance.
 func NewMQTTPubSub(logger logger.Logger) pubsub.PubSub {
 	return &mqttPubSub{
-		logger:  logger,
-		subLock: sync.RWMutex{},
+		logger:          logger,
+		subscribingLock: sync.Mutex{},
 	}
 }
 
@@ -218,8 +218,8 @@ func (m *mqttPubSub) Subscribe(ctx context.Context, req pubsub.SubscribeRequest,
 		return ctxErr
 	}
 
-	m.subLock.Lock()
-	defer m.subLock.Unlock()
+	m.subscribingLock.Lock()
+	defer m.subscribingLock.Unlock()
 
 	// Start the subscription
 	// When the connection is ready, add the topic
@@ -231,8 +231,8 @@ func (m *mqttPubSub) Subscribe(ctx context.Context, req pubsub.SubscribeRequest,
 	// Listen for context cancelation to remove the subscription
 	go func() {
 		<-ctx.Done()
-		m.subLock.Lock()
-		defer m.subLock.Unlock()
+		m.subscribingLock.Lock()
+		defer m.subscribingLock.Unlock()
 
 		// If this is the last subscription, close the connection entirely
 		if len(m.topics) <= 1 {
@@ -307,9 +307,7 @@ func (m *mqttPubSub) onMessage(ctx context.Context) func(client mqtt.Client, mqt
 			Data:  mqttMsg.Payload(),
 		}
 
-		m.subLock.RLock()
 		topicHandler, ok := m.topics[msg.Topic]
-		m.subLock.RUnlock()
 		if !ok || topicHandler == nil {
 			m.logger.Errorf("no handler defined for topic %s", msg.Topic)
 			return
@@ -408,8 +406,8 @@ func (m *mqttPubSub) createClientOptions(uri *url.URL, clientID string) *mqtt.Cl
 }
 
 func (m *mqttPubSub) Close() error {
-	m.subLock.Lock()
-	defer m.subLock.Unlock()
+	m.subscribingLock.Lock()
+	defer m.subscribingLock.Unlock()
 
 	m.cancel()
 
