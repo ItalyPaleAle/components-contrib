@@ -267,6 +267,7 @@ func ConformanceTests(t *testing.T, props map[string]string, ps pubsub.PubSub, c
 				}
 			}()
 
+			for k := (config.MessageCount + 1); k <= (config.MessageCount * 2); k++ {
 				data := []byte(fmt.Sprintf("%s%d", dataPrefix, k))
 				var topic string
 				if k%2 == 0 {
