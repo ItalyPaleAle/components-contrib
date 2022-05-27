@@ -92,6 +92,7 @@ type rabbitMQChannelBroker interface {
 	ExchangeDeclare(name string, kind string, durable bool, autoDelete bool, internal bool, noWait bool, args amqp.Table) error
 	Qos(prefetchCount, prefetchSize int, global bool) error
 	Close() error
+	IsClosed() bool
 }
 
 // interface used to allow unit testing.
@@ -425,7 +426,13 @@ func (r *rabbitMQ) listenMessages(ctx context.Context, channel rabbitMQChannelBr
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case d := <-msgCh:
+		case d, more := <-msgCh:
+			// Handle case of channel closed
+			if !more {
+				r.logger.Debugf("%s subscriber channel closed for topic %s", logMessagePrefix, topic)
+				return nil
+			}
+
 			switch r.metadata.concurrency {
 			case pubsub.Single:
 				err = r.handleMessage(ctx, d, topic, handler)

@@ -363,3 +363,7 @@ func (r *rabbitMQInMemoryBroker) Close() error {
 
 	return nil
 }
+
+func (r *rabbitMQInMemoryBroker) IsClosed() bool {
+	return r.connectCount <= r.closeCount
+}
