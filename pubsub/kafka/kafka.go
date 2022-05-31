@@ -30,7 +30,7 @@ func (p *PubSub) Init(metadata pubsub.Metadata) error {
 	return p.kafka.Init(metadata.Properties)
 }
 
-func (p *PubSub) Subscribe(req pubsub.SubscribeRequest, handler pubsub.Handler) error {
+func (p *PubSub) Subscribe(ctx context.Context, req pubsub.SubscribeRequest, handler pubsub.Handler) error {
 	p.kafka.AddTopicHandler(req.Topic, adaptHandler(handler))
 	return p.kafka.Subscribe(ctx)
 }
