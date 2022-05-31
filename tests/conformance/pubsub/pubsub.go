@@ -362,7 +362,7 @@ func receiveInBackground(t *testing.T, timeout time.Duration, received1Ch <-chan
 			case v := <-allSentCh:
 				allSent = v
 			case <-to.C:
-				assert.Failf(t, "timeout while waiting for messages in multihandlers", "receivedTopic1=%v receivedTopic2=%v", receivedTopic1, receivedTopic2)
+				assert.Failf(t, "timeout while waiting for messages in multihandlers", "receivedTopic1=%v expectedTopic1=%v receivedTopic2=%v expectedTopic2=%v", receivedTopic1, expectedTopic1, receivedTopic2, expectedTopic2)
 				return
 			}
 
