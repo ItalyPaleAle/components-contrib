@@ -40,10 +40,19 @@ func (p *PubSub) Subscribe(ctx context.Context, req pubsub.SubscribeRequest, han
 
 	go func() {
 		// Wait for context cancelation
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-p.subscribeCtx.Done():
+		}
 
-		// Remove the topic handler and restart the subscriber
+		// Remove the topic handler before restarting the subscriber
 		p.kafka.RemoveTopicHandler(req.Topic)
+
+		// If the component's context has been canceled, do not re-subscribe
+		if p.subscribeCtx.Err() != nil {
+			return
+		}
+
 		err := p.kafka.Subscribe(p.subscribeCtx)
 		if err != nil {
 			p.logger.Errorf("kafka pubsub: error re-subscribing: %v", err)

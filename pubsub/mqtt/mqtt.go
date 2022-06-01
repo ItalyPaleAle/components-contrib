@@ -230,12 +230,15 @@ func (m *mqttPubSub) Subscribe(ctx context.Context, req pubsub.SubscribeRequest,
 
 	// Listen for context cancelation to remove the subscription
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-m.ctx.Done():
+		}
 		m.subscribingLock.Lock()
 		defer m.subscribingLock.Unlock()
 
-		// If this is the last subscription, close the connection entirely
-		if len(m.topics) <= 1 {
+		// If this is the last subscription or if the global context is done, close the connection entirely
+		if len(m.topics) <= 1 || m.ctx.Err() != nil {
 			m.consumer.Disconnect(5)
 			m.consumer = nil
 			delete(m.topics, req.Topic)

@@ -293,13 +293,16 @@ func (r *rocketMQ) Subscribe(ctx context.Context, req pubsub.SubscribeRequest, h
 
 	// Listen for context cancelation to remove the subscription
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-r.ctx.Done():
+		}
 
 		r.consumerLock.Lock()
 		defer r.consumerLock.Unlock()
 
-		// If this is the last subscription, close the connection entirely
-		if len(r.topics) <= 1 {
+		// If this is the last subscription or if the global context is done, close the connection entirely
+		if len(r.topics) <= 1 || r.ctx.Err() != nil {
 			_ = r.consumer.Shutdown()
 			r.consumer = nil
 			delete(r.topics, req.Topic)
