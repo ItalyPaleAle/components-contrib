@@ -406,6 +406,22 @@ func (s *snsSqs) createSnsSqsSubscription(parentCtx context.Context, queueArn, t
 	return *subscribeOutput.SubscriptionArn, nil
 }
 
+func (s *snsSqs) removeSnsSqsSubscription(parentCtx context.Context, subscriptionArn string) error {
+	ctx, cancel := context.WithTimeout(parentCtx, s.opsTimeout)
+	_, err := s.snsClient.UnsubscribeWithContext(ctx, &sns.UnsubscribeInput{
+		SubscriptionArn: aws.String(subscriptionArn),
+	})
+	cancel()
+	if err != nil {
+		wrappedErr := fmt.Errorf("error unsubscribing to arn: %s %w", subscriptionArn, err)
+		s.logger.Error(wrappedErr)
+
+		return wrappedErr
+	}
+
+	return nil
+}
+
 func (s *snsSqs) getSnsSqsSubscriptionArn(parentCtx context.Context, topicArn string) (string, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, s.opsTimeout)
 	listSubscriptionsOutput, err := s.snsClient.ListSubscriptionsByTopicWithContext(ctx, &sns.ListSubscriptionsByTopicInput{TopicArn: aws.String(topicArn)})
