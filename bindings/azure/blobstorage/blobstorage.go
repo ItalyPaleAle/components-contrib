@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/google/uuid"
@@ -143,8 +144,9 @@ func (a *AzureBlobStorage) Init(metadata bindings.Metadata) error {
 		containerURL = azblob.NewContainerURL(*URL, p)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	_, err = containerURL.Create(ctx, azblob.Metadata{}, m.PublicAccessLevel)
+	cancel()
 	// Don't return error, container might already exist
 	a.logger.Debugf("error creating container: %w", err)
 	a.containerURL = containerURL

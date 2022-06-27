@@ -74,13 +74,13 @@ func (a *AzureEventGrid) Init(metadata bindings.Metadata) error {
 	return nil
 }
 
-func (a *AzureEventGrid) Read(handler bindings.Handler) error {
+func (a *AzureEventGrid) Read(ctx context.Context, handler bindings.Handler) error {
 	err := a.ensureInputBindingMetadata()
 	if err != nil {
 		return err
 	}
 
-	err = a.createSubscription()
+	err = a.createSubscription(ctx)
 	if err != nil {
 		return err
 	}
@@ -99,7 +99,7 @@ func (a *AzureEventGrid) Read(handler bindings.Handler) error {
 			case "POST":
 				bodyBytes := ctx.PostBody()
 
-				_, err = handler(context.TODO(), &bindings.ReadResponse{
+				_, err = handler(ctx, &bindings.ReadResponse{
 					Data: bodyBytes,
 				})
 				if err != nil {
@@ -229,7 +229,7 @@ func (a *AzureEventGrid) parseMetadata(metadata bindings.Metadata) (*azureEventG
 	return &eventGridMetadata, nil
 }
 
-func (a *AzureEventGrid) createSubscription() error {
+func (a *AzureEventGrid) createSubscription(ctx context.Context) error {
 	clientCredentialsConfig := auth.NewClientCredentialsConfig(a.metadata.ClientID, a.metadata.ClientSecret, a.metadata.TenantID)
 
 	subscriptionClient := eventgrid.NewEventSubscriptionsClient(a.metadata.SubscriptionID)
@@ -253,7 +253,7 @@ func (a *AzureEventGrid) createSubscription() error {
 	}
 
 	a.logger.Debugf("Attempting to create or update Event Grid subscription. scope=%s endpointURL=%s", a.metadata.Scope, a.metadata.SubscriberEndpoint)
-	result, err := subscriptionClient.CreateOrUpdate(context.Background(), a.metadata.Scope, a.metadata.EventSubscriptionName, eventInfo)
+	result, err := subscriptionClient.CreateOrUpdate(ctx, a.metadata.Scope, a.metadata.EventSubscriptionName, eventInfo)
 	if err != nil {
 		a.logger.Debugf("Failed to create or update Event Grid subscription: %v", err)
 
