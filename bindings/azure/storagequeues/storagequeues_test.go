@@ -15,8 +15,6 @@ package storagequeues
 
 import (
 	"context"
-	"os"
-	"syscall"
 	"testing"
 	"time"
 
@@ -65,7 +63,7 @@ func TestWriteQueue(t *testing.T) {
 
 	r := bindings.InvokeRequest{Data: []byte("This is my message")}
 
-	_, err = a.Invoke(context.TODO(), &r)
+	_, err = a.Invoke(context.Background(), &r)
 
 	assert.Nil(t, err)
 }
@@ -87,7 +85,7 @@ func TestWriteWithTTLInQueue(t *testing.T) {
 
 	r := bindings.InvokeRequest{Data: []byte("This is my message")}
 
-	_, err = a.Invoke(context.TODO(), &r)
+	_, err = a.Invoke(context.Background(), &r)
 
 	assert.Nil(t, err)
 }
@@ -112,7 +110,7 @@ func TestWriteWithTTLInWrite(t *testing.T) {
 		Metadata: map[string]string{metadata.TTLMetadataKey: "1"},
 	}
 
-	_, err = a.Invoke(context.TODO(), &r)
+	_, err = a.Invoke(context.Background(), &r)
 
 	assert.Nil(t, err)
 }
@@ -149,24 +147,24 @@ func TestReadQueue(t *testing.T) {
 
 	r := bindings.InvokeRequest{Data: []byte("This is my message")}
 
-	_, err = a.Invoke(context.TODO(), &r)
+	ctx, cancel := context.WithCancel(context.Background())
+	_, err = a.Invoke(ctx, &r)
 
 	assert.Nil(t, err)
 
+	received := 0
 	handler := func(ctx context.Context, data *bindings.ReadResponse) ([]byte, error) {
+		received++
 		s := string(data.Data)
 		assert.Equal(t, s, "This is my message")
 
 		return nil, nil
 	}
 
-	go a.Read(handler)
-
+	a.Read(ctx, handler)
 	time.Sleep(5 * time.Second)
-
-	pid := syscall.Getpid()
-	proc, _ := os.FindProcess(pid)
-	proc.Signal(os.Interrupt)
+	cancel()
+	assert.Equal(t, 1, received)
 }
 
 func TestReadQueueDecode(t *testing.T) {
@@ -184,24 +182,24 @@ func TestReadQueueDecode(t *testing.T) {
 
 	r := bindings.InvokeRequest{Data: []byte("VGhpcyBpcyBteSBtZXNzYWdl")}
 
-	_, err = a.Invoke(context.TODO(), &r)
+	ctx, cancel := context.WithCancel(context.Background())
+	_, err = a.Invoke(ctx, &r)
 
 	assert.Nil(t, err)
 
+	received := 0
 	handler := func(ctx context.Context, data *bindings.ReadResponse) ([]byte, error) {
+		received++
 		s := string(data.Data)
 		assert.Equal(t, s, "This is my message")
 
 		return nil, nil
 	}
 
-	go a.Read(handler)
-
+	a.Read(ctx, handler)
 	time.Sleep(5 * time.Second)
-
-	pid := syscall.Getpid()
-	proc, _ := os.FindProcess(pid)
-	proc.Signal(os.Interrupt)
+	cancel()
+	assert.Equal(t, 1, received)
 }
 
 // Uncomment this function to test reding from local queue
@@ -246,20 +244,20 @@ func TestReadQueueNoMessage(t *testing.T) {
 	err := a.Init(m)
 	assert.Nil(t, err)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	received := 0
 	handler := func(ctx context.Context, data *bindings.ReadResponse) ([]byte, error) {
+		received++
 		s := string(data.Data)
 		assert.Equal(t, s, "This is my message")
 
 		return nil, nil
 	}
 
-	go a.Read(handler)
-
+	a.Read(ctx, handler)
 	time.Sleep(5 * time.Second)
-
-	pid := syscall.Getpid()
-	proc, _ := os.FindProcess(pid)
-	proc.Signal(os.Interrupt)
+	cancel()
+	assert.Equal(t, 0, received)
 }
 
 func TestParseMetadata(t *testing.T) {
