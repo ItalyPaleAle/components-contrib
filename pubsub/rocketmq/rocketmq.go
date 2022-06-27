@@ -234,7 +234,11 @@ func (r *rocketMQ) adaptCallback(topic, consumerGroup, mqType, mqExpr string, ha
 			}
 			b := r.backOffConfig.NewBackOffWithContext(ctx)
 			retError := retry.NotifyRecover(func() error {
-				herr := handler(ctx, &newMessage)
+				herr := ctx.Err()
+				if herr != nil {
+					return backoff.Permanent(herr)
+				}
+				herr = handler(ctx, &newMessage)
 				if herr != nil {
 					r.logger.Errorf("rocketmq error: fail to send message to dapr application. topic:%s cloudEventsMap-length:%d err:%newMessage ", newMessage.Topic, len(msg.Body), herr)
 					success = false
