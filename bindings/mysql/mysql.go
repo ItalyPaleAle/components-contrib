@@ -75,8 +75,6 @@ type Mysql struct {
 	logger logger.Logger
 }
 
-var _ = bindings.OutputBinding(&Mysql{})
-
 // NewMysql returns a new MySQL output binding.
 func NewMysql(logger logger.Logger) *Mysql {
 	return &Mysql{logger: logger}
@@ -147,7 +145,7 @@ func (m *Mysql) Invoke(ctx context.Context, req *bindings.InvokeRequest) (*bindi
 		return nil, errors.Errorf("required metadata not set: %s", commandSQLKey)
 	}
 
-	startTime := time.Now().UTC()
+	startTime := time.Now()
 
 	resp := &bindings.InvokeResponse{
 		Metadata: map[string]string{
@@ -177,7 +175,7 @@ func (m *Mysql) Invoke(ctx context.Context, req *bindings.InvokeRequest) (*bindi
 			req.Operation, execOperation, queryOperation, closeOperation)
 	}
 
-	endTime := time.Now().UTC()
+	endTime := time.Now()
 	resp.Metadata[respEndTimeKey] = endTime.Format(time.RFC3339Nano)
 	resp.Metadata[respDurationKey] = endTime.Sub(startTime).String()
 
