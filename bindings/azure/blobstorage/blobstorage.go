@@ -14,18 +14,19 @@ limitations under the License.
 package blobstorage
 
 import (
-	"bytes"
 	"context"
 	b64 "encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"strconv"
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 
 	azauth "github.com/dapr/components-contrib/authentication/azure"
 	"github.com/dapr/components-contrib/bindings"
@@ -155,14 +156,8 @@ func (a *AzureBlobStorage) Init(metadata bindings.Metadata) error {
 }
 
 func (a *AzureBlobStorage) parseMetadata(metadata bindings.Metadata) (*blobStorageMetadata, error) {
-	connInfo := metadata.Properties
-	b, err := json.Marshal(connInfo)
-	if err != nil {
-		return nil, err
-	}
-
 	var m blobStorageMetadata
-	err = json.Unmarshal(b, &m)
+	err := mapstructure.WeakDecode(metadata.Properties, &m)
 	if err != nil {
 		return nil, err
 	}
@@ -288,8 +283,7 @@ func (a *AzureBlobStorage) get(ctx context.Context, req *bindings.InvokeRequest)
 
 	bodyStream := resp.Body(azblob.RetryReaderOptions{MaxRetryRequests: a.metadata.GetBlobRetryCount})
 
-	b := bytes.Buffer{}
-	_, err = b.ReadFrom(bodyStream)
+	data, err := io.ReadAll(bodyStream)
 	if err != nil {
 		return nil, fmt.Errorf("error reading az blob body: %w", err)
 	}
@@ -310,7 +304,7 @@ func (a *AzureBlobStorage) get(ctx context.Context, req *bindings.InvokeRequest)
 	}
 
 	return &bindings.InvokeResponse{
-		Data:     b.Bytes(),
+		Data:     data,
 		Metadata: metadata,
 	}, nil
 }

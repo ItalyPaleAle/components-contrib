@@ -16,19 +16,16 @@ package storagequeues
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
-	"os/signal"
 	"strconv"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/Azure/azure-storage-queue-go/azqueue"
+	"github.com/mitchellh/mapstructure"
 
 	"github.com/dapr/components-contrib/bindings"
+	"github.com/dapr/components-contrib/internal/utils"
 	contrib_metadata "github.com/dapr/components-contrib/metadata"
 	"github.com/dapr/kit/logger"
 )
@@ -94,8 +91,7 @@ func (d *AzureQueueHelper) Init(endpoint string, accountName string, accountKey 
 		},
 	}
 	d.queueURL = azqueue.NewQueueURL(*u, azqueue.NewPipeline(credential, pipelineOptions))
-	ctx := context.TODO()
-	_, err = d.queueURL.Create(ctx, azqueue.Metadata{})
+	_, err = d.queueURL.Create(context.Background(), azqueue.Metadata{})
 	if err != nil {
 		return err
 	}
@@ -129,7 +125,6 @@ func (d *AzureQueueHelper) Read(ctx context.Context, consumer *consumer) error {
 	if res.NumMessages() == 0 {
 		// Queue was empty so back off by 10 seconds before trying again
 		time.Sleep(10 * time.Second)
-
 		return nil
 	}
 	mt := res.Message(0).Text
@@ -201,10 +196,7 @@ func (a *AzureStorageQueues) Init(metadata bindings.Metadata) error {
 	}
 	a.metadata = meta
 
-	decodeBase64 := false
-	if a.metadata.DecodeBase64 == "true" {
-		decodeBase64 = true
-	}
+	decodeBase64 := utils.IsTruthy(a.metadata.DecodeBase64)
 
 	endpoint := ""
 	if a.metadata.QueueEndpoint != "" {
@@ -220,12 +212,8 @@ func (a *AzureStorageQueues) Init(metadata bindings.Metadata) error {
 }
 
 func (a *AzureStorageQueues) parseMetadata(metadata bindings.Metadata) (*storageQueuesMetadata, error) {
-	b, err := json.Marshal(metadata.Properties)
-	if err != nil {
-		return nil, err
-	}
 	var m storageQueuesMetadata
-	err = json.Unmarshal(b, &m)
+	err := mapstructure.WeakDecode(metadata.Properties, &m)
 	if err != nil {
 		return nil, err
 	}
@@ -265,31 +253,20 @@ func (a *AzureStorageQueues) Invoke(ctx context.Context, req *bindings.InvokeReq
 	return nil, nil
 }
 
-func (a *AzureStorageQueues) Read(handler bindings.Handler) error {
+func (a *AzureStorageQueues) Read(ctx context.Context, handler bindings.Handler) error {
 	c := consumer{
 		callback: handler,
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
-		for {
-			err := a.helper.Read(ctx, &c)
+		// Read until context is canceled
+		var err error
+		for ctx.Err() == nil {
+			err = a.helper.Read(ctx, &c)
 			if err != nil {
 				a.logger.Errorf("error from c: %s", err)
 			}
-			if ctx.Err() != nil {
-				return
-			}
 		}
 	}()
-
-	sigterm := make(chan os.Signal, 1)
-	signal.Notify(sigterm, syscall.SIGINT, syscall.SIGTERM)
-	<-sigterm
-	cancel()
-	wg.Wait()
 
 	return nil
 }

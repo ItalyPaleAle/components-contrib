@@ -95,7 +95,7 @@ func (d *DynamoDB) Invoke(ctx context.Context, req *bindings.InvokeRequest) (*bi
 
 func (d *DynamoDB) getDynamoDBMetadata(spec bindings.Metadata) (*dynamoDBMetadata, error) {
 	var meta dynamoDBMetadata
-	err := mapstructure.Decode(spec.Properties, &meta)
+	err := mapstructure.WeakDecode(spec.Properties, &meta)
 	if err != nil {
 		return nil, err
 	}

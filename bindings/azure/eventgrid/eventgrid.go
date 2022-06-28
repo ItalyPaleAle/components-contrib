@@ -110,11 +110,27 @@ func (a *AzureEventGrid) Read(ctx context.Context, handler bindings.Handler) err
 		}
 	}
 
-	a.logger.Debugf("About to start listening for Event Grid events at http://localhost:%s/api/events", a.metadata.HandshakePort)
-	err = fasthttp.ListenAndServe(fmt.Sprintf(":%s", a.metadata.HandshakePort), m)
-	if err != nil {
-		return err
+	srv := &fasthttp.Server{
+		Handler: m,
 	}
+
+	// Run the server in background
+	go func() {
+		a.logger.Debugf("About to start listening for Event Grid events at http://localhost:%s/api/events", a.metadata.HandshakePort)
+		err := srv.ListenAndServe(fmt.Sprintf(":%s", a.metadata.HandshakePort))
+		if err != nil {
+			a.logger.Errorf("Error starting server: %v", err)
+		}
+	}()
+
+	// Close the server when context is canceled
+	go func() {
+		<-ctx.Done()
+		err := srv.Shutdown()
+		if err != nil {
+			a.logger.Errorf("Error shutting down server: %v", err)
+		}
+	}()
 
 	return nil
 }

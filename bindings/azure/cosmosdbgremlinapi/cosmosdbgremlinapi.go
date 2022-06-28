@@ -98,7 +98,7 @@ func (c *CosmosDBGremlinAPI) Operations() []bindings.OperationKind {
 	return []bindings.OperationKind{queryOperation}
 }
 
-func (c *CosmosDBGremlinAPI) Invoke(ctx context.Context, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error) {
+func (c *CosmosDBGremlinAPI) Invoke(_ context.Context, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error) {
 	var jsonPoint map[string]interface{}
 	err := json.Unmarshal(req.Data, &jsonPoint)
 	if err != nil {

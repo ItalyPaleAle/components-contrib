@@ -301,7 +301,7 @@ func (a *AzureEventHubs) Invoke(ctx context.Context, req *bindings.InvokeRequest
 	return nil, nil
 }
 
-// Read gets messages from eventhubs in a non-blocking fashion.
+// Read gets messages from eventhubs in a non-blocking way.
 func (a *AzureEventHubs) Read(ctx context.Context, handler bindings.Handler) error {
 	if !a.metadata.partitioned() {
 		if err := a.RegisterEventProcessor(ctx, handler); err != nil {
