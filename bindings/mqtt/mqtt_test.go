@@ -113,7 +113,8 @@ func TestParseMetadata(t *testing.T) {
 		m, err := parseMQTTMetaData(fakeMetaData)
 
 		// assert
-		assert.Contains(t, err.Error(), "invalid clean session")
+		assert.NoError(t, err)
+		assert.Equal(t, m.cleanSession, defaultCleanSession)
 		assert.Equal(t, fakeProperties[mqttURL], m.url)
 	})
 

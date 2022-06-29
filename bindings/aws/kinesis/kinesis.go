@@ -48,24 +48,22 @@ type AWSKinesis struct {
 }
 
 type kinesisMetadata struct {
-	StreamName          string              `json:"streamName"`
-	ConsumerName        string              `json:"consumerName"`
-	Region              string              `json:"region"`
-	Endpoint            string              `json:"endpoint"`
-	AccessKey           string              `json:"accessKey"`
-	SecretKey           string              `json:"secretKey"`
-	SessionToken        string              `json:"sessionToken"`
-	KinesisConsumerMode kinesisConsumerMode `json:"mode"`
+	StreamName          string `json:"streamName"`
+	ConsumerName        string `json:"consumerName"`
+	Region              string `json:"region"`
+	Endpoint            string `json:"endpoint"`
+	AccessKey           string `json:"accessKey"`
+	SecretKey           string `json:"secretKey"`
+	SessionToken        string `json:"sessionToken"`
+	KinesisConsumerMode string `json:"mode"`
 }
-
-type kinesisConsumerMode string
 
 const (
 	// ExtendedFanout - dedicated throughput through data stream api.
-	ExtendedFanout kinesisConsumerMode = "extended"
+	ExtendedFanout = "extended"
 
 	// SharedThroughput - shared throughput using checkpoint and monitoring.
-	SharedThroughput kinesisConsumerMode = "shared"
+	SharedThroughput = "shared"
 
 	partitionKeyName = "partitionKey"
 )
