@@ -83,7 +83,7 @@ func (t *Binding) Operations() []bindings.OperationKind {
 // Read triggers the Twitter search and events on each result tweet.
 func (t *Binding) Read(ctx context.Context, handler bindings.Handler) error {
 	if t.query == "" {
-		return nil
+		return errors.New("metadata property 'query' is empty")
 	}
 
 	demux := twitter.NewSwitchDemux()

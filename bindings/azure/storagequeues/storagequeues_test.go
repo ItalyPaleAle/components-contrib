@@ -15,6 +15,7 @@ package storagequeues
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -28,22 +29,38 @@ import (
 
 type MockHelper struct {
 	mock.Mock
+	messages     chan []byte
+	decodeBase64 bool
 }
 
 func (m *MockHelper) Init(endpoint, accountName, accountKey, queueName string, decodeBase64 bool) error {
+	m.messages = make(chan []byte, 10)
+	m.decodeBase64 = decodeBase64
 	retvals := m.Called(endpoint, accountName, accountKey, queueName, decodeBase64)
-
 	return retvals.Error(0)
 }
 
 func (m *MockHelper) Write(ctx context.Context, data []byte, ttl *time.Duration) error {
+	m.messages <- data
 	retvals := m.Called(data, ttl)
-
 	return retvals.Error(0)
 }
 
 func (m *MockHelper) Read(ctx context.Context, consumer *consumer) error {
-	return nil
+	retvals := m.Called(ctx, consumer)
+
+	go func() {
+		for msg := range m.messages {
+			if m.decodeBase64 {
+				msg, _ = base64.StdEncoding.DecodeString(string(msg))
+			}
+			go consumer.callback(ctx, &bindings.ReadResponse{
+				Data: msg,
+			})
+		}
+	}()
+
+	return retvals.Error(0)
 }
 
 func TestWriteQueue(t *testing.T) {
@@ -137,6 +154,7 @@ func TestReadQueue(t *testing.T) {
 	mm := new(MockHelper)
 	mm.On("Init", "", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(nil)
 	mm.On("Write", mock.AnythingOfType("[]uint8"), mock.AnythingOfType("*time.Duration")).Return(nil)
+	mm.On("Read", mock.AnythingOfType("*context.cancelCtx"), mock.AnythingOfType("*storagequeues.consumer")).Return(nil)
 	a := AzureStorageQueues{helper: mm, logger: logger.NewLogger("test")}
 
 	m := bindings.Metadata{}
@@ -163,7 +181,13 @@ func TestReadQueue(t *testing.T) {
 	}
 
 	a.Read(ctx, handler)
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+		// do nothing
+	case <-time.After(10 * time.Second):
+		cancel()
+		t.Fatal("Timeout waiting for messages")
+	}
 	assert.Equal(t, 1, received)
 }
 
@@ -171,6 +195,7 @@ func TestReadQueueDecode(t *testing.T) {
 	mm := new(MockHelper)
 	mm.On("Init", "", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(nil)
 	mm.On("Write", mock.AnythingOfType("[]uint8"), mock.AnythingOfType("*time.Duration")).Return(nil)
+	mm.On("Read", mock.AnythingOfType("*context.cancelCtx"), mock.AnythingOfType("*storagequeues.consumer")).Return(nil)
 
 	a := AzureStorageQueues{helper: mm, logger: logger.NewLogger("test")}
 
@@ -198,7 +223,13 @@ func TestReadQueueDecode(t *testing.T) {
 	}
 
 	a.Read(ctx, handler)
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+		// do nothing
+	case <-time.After(10 * time.Second):
+		cancel()
+		t.Fatal("Timeout waiting for messages")
+	}
 	assert.Equal(t, 1, received)
 }
 
@@ -235,6 +266,7 @@ func TestReadQueueNoMessage(t *testing.T) {
 	mm := new(MockHelper)
 	mm.On("Init", "", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("string"), false).Return(nil)
 	mm.On("Write", mock.AnythingOfType("[]uint8"), mock.AnythingOfType("*time.Duration")).Return(nil)
+	mm.On("Read", mock.AnythingOfType("*context.cancelCtx"), mock.AnythingOfType("*storagequeues.consumer")).Return(nil)
 
 	a := AzureStorageQueues{helper: mm, logger: logger.NewLogger("test")}
 
@@ -255,7 +287,7 @@ func TestReadQueueNoMessage(t *testing.T) {
 	}
 
 	a.Read(ctx, handler)
-	time.Sleep(5 * time.Second)
+	time.Sleep(1 * time.Second)
 	cancel()
 	assert.Equal(t, 0, received)
 }
