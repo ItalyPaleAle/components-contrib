@@ -53,7 +53,7 @@ type outgoingWebhook struct {
 	handler bindings.Handler
 }
 
-var webhooks = struct { // nolint: gochecknoglobals
+var webhooks = struct { //nolint: gochecknoglobals
 	sync.RWMutex
 	m map[string]*outgoingWebhook
 }{m: make(map[string]*outgoingWebhook)}
@@ -218,6 +218,7 @@ func getPostURL(urlPath, secret string) (string, error) {
 func sign(secret, timestamp string) (string, error) {
 	stringToSign := fmt.Sprintf("%s\n%s", timestamp, secret)
 	h := hmac.New(sha256.New, []byte(secret))
-	dgst := h.Sum([]byte(stringToSign))
+	_, _ = h.Write([]byte(stringToSign))
+	dgst := h.Sum(nil)
 	return base64.StdEncoding.EncodeToString(dgst), nil
 }

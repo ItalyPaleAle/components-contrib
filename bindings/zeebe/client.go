@@ -14,10 +14,10 @@ limitations under the License.
 package zeebe
 
 import (
-	"encoding/json"
 	"errors"
 
 	"github.com/camunda/zeebe/clients/go/v8/pkg/zbc"
+	"github.com/mitchellh/mapstructure"
 
 	"github.com/dapr/components-contrib/bindings"
 	"github.com/dapr/components-contrib/metadata"
@@ -68,13 +68,8 @@ func (c *ClientFactoryImpl) Get(metadata bindings.Metadata) (zbc.Client, error) 
 }
 
 func (c *ClientFactoryImpl) parseMetadata(metadata bindings.Metadata) (*clientMetadata, error) {
-	b, err := json.Marshal(metadata.Properties)
-	if err != nil {
-		return nil, err
-	}
-
 	var m clientMetadata
-	err = json.Unmarshal(b, &m)
+	err := mapstructure.WeakDecode(metadata.Properties, &m)
 	if err != nil {
 		return nil, err
 	}

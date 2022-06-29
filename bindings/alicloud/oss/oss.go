@@ -16,10 +16,10 @@ package oss
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 
 	"github.com/dapr/components-contrib/bindings"
 	"github.com/dapr/kit/logger"
@@ -64,7 +64,7 @@ func (s *AliCloudOSS) Operations() []bindings.OperationKind {
 	return []bindings.OperationKind{bindings.CreateOperation}
 }
 
-func (s *AliCloudOSS) Invoke(ctx context.Context, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error) {
+func (s *AliCloudOSS) Invoke(_ context.Context, req *bindings.InvokeRequest) (*bindings.InvokeResponse, error) {
 	key := ""
 	if val, ok := req.Metadata["key"]; ok && val != "" {
 		key = val
@@ -88,13 +88,8 @@ func (s *AliCloudOSS) Invoke(ctx context.Context, req *bindings.InvokeRequest) (
 }
 
 func (s *AliCloudOSS) parseMetadata(metadata bindings.Metadata) (*ossMetadata, error) {
-	b, err := json.Marshal(metadata.Properties)
-	if err != nil {
-		return nil, err
-	}
-
 	var m ossMetadata
-	err = json.Unmarshal(b, &m)
+	err := mapstructure.WeakDecode(metadata.Properties, &m)
 	if err != nil {
 		return nil, err
 	}
