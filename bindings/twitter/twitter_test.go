@@ -70,12 +70,15 @@ func TestReadError(t *testing.T) {
 	err := tw.Init(m)
 	assert.Nilf(t, err, "error initializing valid metadata properties")
 
-	tw.Read(func(ctx context.Context, res *bindings.ReadResponse) ([]byte, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	tw.Read(ctx, func(ctx context.Context, res *bindings.ReadResponse) ([]byte, error) {
 		t.Logf("result: %+v", res)
 		assert.NotNilf(t, err, "no error on read with invalid credentials")
+		cancel()
 
 		return nil, nil
 	})
+	<-ctx.Done()
 }
 
 // TestRead executes the Read method which calls Twiter API
@@ -93,18 +96,20 @@ func TestReed(t *testing.T) {
 	err := tw.Init(m)
 	assert.Nilf(t, err, "error initializing read")
 
+	ctx, cancel := context.WithCancel(context.Background())
 	counter := 0
-	err = tw.Read(func(ctx context.Context, res *bindings.ReadResponse) ([]byte, error) {
+	err = tw.Read(ctx, func(ctx context.Context, res *bindings.ReadResponse) ([]byte, error) {
 		counter++
 		t.Logf("tweet[%d]", counter)
 		var tweet twitter.Tweet
 		json.Unmarshal(res.Data, &tweet)
 		assert.NotEmpty(t, tweet.IDStr, "tweet should have an ID")
-		os.Exit(0)
+		cancel()
 
 		return nil, nil
 	})
 	assert.Nilf(t, err, "error on read")
+	<-ctx.Done()
 }
 
 // TestInvoke executes the Invoke method which calls Twiter API
