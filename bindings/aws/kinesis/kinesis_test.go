@@ -43,5 +43,5 @@ func TestParseMetadata(t *testing.T) {
 	assert.Equal(t, "stream", meta.StreamName)
 	assert.Equal(t, "endpoint", meta.Endpoint)
 	assert.Equal(t, "token", meta.SessionToken)
-	assert.Equal(t, kinesisConsumerMode("extended"), meta.KinesisConsumerMode)
+	assert.Equal(t, "extended", meta.KinesisConsumerMode)
 }

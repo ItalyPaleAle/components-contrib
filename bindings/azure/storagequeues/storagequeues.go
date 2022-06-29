@@ -175,11 +175,11 @@ type AzureStorageQueues struct {
 }
 
 type storageQueuesMetadata struct {
-	AccountKey    string `json:"storageAccessKey"`
-	QueueName     string `json:"queue"`
-	QueueEndpoint string `json:"queueEndpointUrl"`
-	AccountName   string `json:"storageAccount"`
-	DecodeBase64  string `json:"decodeBase64"`
+	AccountKey    string `json:"storageAccessKey" mapstructure:"storageAccessKey"`
+	QueueName     string `json:"queue" mapstructure:"queue"`
+	QueueEndpoint string `json:"queueEndpointUrl" mapstructure:"queueEndpointUrl"`
+	AccountName   string `json:"storageAccount" mapstructure:"storageAccount"`
+	DecodeBase64  string `json:"decodeBase64" mapstructure:"decodeBase64"`
 	ttl           *time.Duration
 }
 

@@ -157,13 +157,13 @@ func TestReadQueue(t *testing.T) {
 		received++
 		s := string(data.Data)
 		assert.Equal(t, s, "This is my message")
+		cancel()
 
 		return nil, nil
 	}
 
 	a.Read(ctx, handler)
-	time.Sleep(5 * time.Second)
-	cancel()
+	<-ctx.Done()
 	assert.Equal(t, 1, received)
 }
 
@@ -192,13 +192,13 @@ func TestReadQueueDecode(t *testing.T) {
 		received++
 		s := string(data.Data)
 		assert.Equal(t, s, "This is my message")
+		cancel()
 
 		return nil, nil
 	}
 
 	a.Read(ctx, handler)
-	time.Sleep(5 * time.Second)
-	cancel()
+	<-ctx.Done()
 	assert.Equal(t, 1, received)
 }
 

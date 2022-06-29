@@ -37,10 +37,10 @@ type ClientFactoryImpl struct {
 
 // https://docs.zeebe.io/operations/authentication.html
 type clientMetadata struct {
-	GatewayAddr            string            `json:"gatewayAddr"`
-	GatewayKeepAlive       metadata.Duration `json:"gatewayKeepAlive"`
-	CaCertificatePath      string            `json:"caCertificatePath"`
-	UsePlaintextConnection bool              `json:"usePlainTextConnection,string"`
+	GatewayAddr            string            `json:"gatewayAddr" mapstructure:"gatewayAddr"`
+	GatewayKeepAlive       metadata.Duration `json:"gatewayKeepAlive" mapstructure:"gatewayKeepAlive"`
+	CaCertificatePath      string            `json:"caCertificatePath" mapstructure:"caCertificatePath"`
+	UsePlaintextConnection bool              `json:"usePlainTextConnection,string" mapstructure:"usePlainTextConnection"`
 }
 
 // NewClientFactoryImpl returns a new ClientFactory instance.

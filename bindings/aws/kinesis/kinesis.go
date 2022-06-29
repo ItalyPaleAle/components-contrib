@@ -55,7 +55,7 @@ type kinesisMetadata struct {
 	AccessKey           string `json:"accessKey"`
 	SecretKey           string `json:"secretKey"`
 	SessionToken        string `json:"sessionToken"`
-	KinesisConsumerMode string `json:"mode"`
+	KinesisConsumerMode string `json:"mode" mapstructure:"mode"`
 }
 
 const (

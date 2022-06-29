@@ -24,11 +24,11 @@ import (
 	"github.com/camunda/zeebe/clients/go/v8/pkg/entities"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/worker"
 	"github.com/camunda/zeebe/clients/go/v8/pkg/zbc"
-	"github.com/mitchellh/mapstructure"
 
 	"github.com/dapr/components-contrib/bindings"
 	"github.com/dapr/components-contrib/bindings/zeebe"
 	"github.com/dapr/components-contrib/metadata"
+	"github.com/dapr/kit/config"
 	"github.com/dapr/kit/logger"
 )
 
@@ -110,7 +110,7 @@ func (z *ZeebeJobWorker) Read(ctx context.Context, handler bindings.Handler) err
 
 func (z *ZeebeJobWorker) parseMetadata(metadata bindings.Metadata) (*jobWorkerMetadata, error) {
 	var m jobWorkerMetadata
-	err := mapstructure.WeakDecode(metadata.Properties, &m)
+	err := config.Decode(metadata.Properties, &m)
 	if err != nil {
 		return nil, err
 	}

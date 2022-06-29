@@ -33,10 +33,10 @@ type AliCloudOSS struct {
 }
 
 type ossMetadata struct {
-	Endpoint    string `json:"endpoint"`
-	AccessKeyID string `json:"accessKeyID"`
-	AccessKey   string `json:"accessKey"`
-	Bucket      string `json:"bucket"`
+	Endpoint    string `json:"endpoint" mapstructure:"endpoint"`
+	AccessKeyID string `json:"accessKeyID" mapstructure:"accessKeyID"`
+	AccessKey   string `json:"accessKey" mapstructure:"accessKey"`
+	Bucket      string `json:"bucket" mapstructure:"bucket"`
 }
 
 // NewAliCloudOSS returns a new  instance.

@@ -114,7 +114,7 @@ func TestParseMetadata(t *testing.T) {
 
 		// assert
 		assert.NoError(t, err)
-		assert.Equal(t, m.cleanSession, defaultCleanSession)
+		assert.Equal(t, m.cleanSession, false)
 		assert.Equal(t, fakeProperties[mqttURL], m.url)
 	})
 
