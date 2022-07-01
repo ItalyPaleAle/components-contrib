@@ -217,12 +217,17 @@ func (a *AzureStorageQueues) Init(metadata bindings.Metadata) error {
 
 func (a *AzureStorageQueues) parseMetadata(metadata bindings.Metadata) (*storageQueuesMetadata, error) {
 	var m storageQueuesMetadata
-	// AccountKey is parsed in azauth
 
 	if val, ok := mdutils.GetMetadataProperty(metadata.Properties, azauth.StorageAccountNameKeys...); ok && val != "" {
 		m.AccountName = val
 	} else {
 		return nil, fmt.Errorf("missing or empty %s field from metadata", azauth.StorageAccountNameKeys[0])
+	}
+
+	if val, ok := mdutils.GetMetadataProperty(metadata.Properties, azauth.StorageAccountKeyKeys...); ok && val != "" {
+		m.AccountKey = val
+	} else {
+		return nil, fmt.Errorf("missing or empty %s field from metadata", azauth.StorageAccountKeyKeys[0])
 	}
 
 	if val, ok := mdutils.GetMetadataProperty(metadata.Properties, azauth.StorageQueueNameKeys...); ok && val != "" {
