@@ -29,12 +29,15 @@ import (
 
 type MockHelper struct {
 	mock.Mock
-	messages     chan []byte
-	decodeBase64 bool
+	messages chan []byte
+	metadata *storageQueuesMetadata
 }
 
 func (m *MockHelper) Init(metadata bindings.Metadata) (*storageQueuesMetadata, error) {
-	return parseMetadata(metadata)
+	m.messages = make(chan []byte, 10)
+	var err error
+	m.metadata, err = parseMetadata(metadata)
+	return m.metadata, err
 }
 
 func (m *MockHelper) Write(ctx context.Context, data []byte, ttl *time.Duration) error {
@@ -48,7 +51,7 @@ func (m *MockHelper) Read(ctx context.Context, consumer *consumer) error {
 
 	go func() {
 		for msg := range m.messages {
-			if m.decodeBase64 {
+			if m.metadata.DecodeBase64 {
 				msg, _ = base64.StdEncoding.DecodeString(string(msg))
 			}
 			go consumer.callback(ctx, &bindings.ReadResponse{
