@@ -33,11 +33,8 @@ type MockHelper struct {
 	decodeBase64 bool
 }
 
-func (m *MockHelper) Init(endpoint, accountName, accountKey, queueName string, decodeBase64 bool) error {
-	m.messages = make(chan []byte, 10)
-	m.decodeBase64 = decodeBase64
-	retvals := m.Called(endpoint, accountName, accountKey, queueName, decodeBase64)
-	return retvals.Error(0)
+func (m *MockHelper) Init(metadata bindings.Metadata) (*storageQueuesMetadata, error) {
+	return parseMetadata(metadata)
 }
 
 func (m *MockHelper) Write(ctx context.Context, data []byte, ttl *time.Duration) error {
@@ -65,7 +62,6 @@ func (m *MockHelper) Read(ctx context.Context, consumer *consumer) error {
 
 func TestWriteQueue(t *testing.T) {
 	mm := new(MockHelper)
-	mm.On("Init", "", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(nil)
 	mm.On("Write", mock.AnythingOfType("[]uint8"), mock.MatchedBy(func(in *time.Duration) bool {
 		return in == nil
 	})).Return(nil)
@@ -87,7 +83,6 @@ func TestWriteQueue(t *testing.T) {
 
 func TestWriteWithTTLInQueue(t *testing.T) {
 	mm := new(MockHelper)
-	mm.On("Init", "", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(nil)
 	mm.On("Write", mock.AnythingOfTypeArgument("[]uint8"), mock.MatchedBy(func(in *time.Duration) bool {
 		return in != nil && *in == time.Second
 	})).Return(nil)
@@ -109,7 +104,6 @@ func TestWriteWithTTLInQueue(t *testing.T) {
 
 func TestWriteWithTTLInWrite(t *testing.T) {
 	mm := new(MockHelper)
-	mm.On("Init", "", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(nil)
 	mm.On("Write", mock.AnythingOfTypeArgument("[]uint8"), mock.MatchedBy(func(in *time.Duration) bool {
 		return in != nil && *in == time.Second
 	})).Return(nil)
@@ -152,7 +146,6 @@ func TestWriteWithTTLInWrite(t *testing.T) {
 
 func TestReadQueue(t *testing.T) {
 	mm := new(MockHelper)
-	mm.On("Init", "", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(nil)
 	mm.On("Write", mock.AnythingOfType("[]uint8"), mock.AnythingOfType("*time.Duration")).Return(nil)
 	mm.On("Read", mock.AnythingOfType("*context.cancelCtx"), mock.AnythingOfType("*storagequeues.consumer")).Return(nil)
 	a := AzureStorageQueues{helper: mm, logger: logger.NewLogger("test")}
@@ -193,7 +186,6 @@ func TestReadQueue(t *testing.T) {
 
 func TestReadQueueDecode(t *testing.T) {
 	mm := new(MockHelper)
-	mm.On("Init", "", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(nil)
 	mm.On("Write", mock.AnythingOfType("[]uint8"), mock.AnythingOfType("*time.Duration")).Return(nil)
 	mm.On("Read", mock.AnythingOfType("*context.cancelCtx"), mock.AnythingOfType("*storagequeues.consumer")).Return(nil)
 
@@ -264,7 +256,6 @@ func TestReadQueueDecode(t *testing.T) {
 */
 func TestReadQueueNoMessage(t *testing.T) {
 	mm := new(MockHelper)
-	mm.On("Init", "", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("string"), false).Return(nil)
 	mm.On("Write", mock.AnythingOfType("[]uint8"), mock.AnythingOfType("*time.Duration")).Return(nil)
 	mm.On("Read", mock.AnythingOfType("*context.cancelCtx"), mock.AnythingOfType("*storagequeues.consumer")).Return(nil)
 
@@ -340,8 +331,7 @@ func TestParseMetadata(t *testing.T) {
 			m := bindings.Metadata{}
 			m.Properties = tt.properties
 
-			a := NewAzureStorageQueues(logger.NewLogger("test"))
-			meta, err := a.parseMetadata(m)
+			meta, err := parseMetadata(m)
 
 			assert.Nil(t, err)
 			// assert.Equal(t, tt.expectedAccountKey, meta.AccountKey)
@@ -376,8 +366,7 @@ func TestParseMetadataWithInvalidTTL(t *testing.T) {
 			m := bindings.Metadata{}
 			m.Properties = tt.properties
 
-			a := NewAzureStorageQueues(logger.NewLogger("test"))
-			_, err := a.parseMetadata(m)
+			_, err := parseMetadata(m)
 			assert.NotNil(t, err)
 		})
 	}
