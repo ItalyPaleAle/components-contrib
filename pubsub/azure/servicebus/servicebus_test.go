@@ -27,22 +27,22 @@ const (
 
 func getFakeProperties() map[string]string {
 	return map[string]string{
-		connectionString:              "fakeConnectionString",
-		namespaceName:                 "",
-		consumerID:                    "fakeConId",
-		disableEntityManagement:       "true",
-		timeoutInSec:                  "90",
-		handlerTimeoutInSec:           "30",
-		maxDeliveryCount:              "10",
-		autoDeleteOnIdleInSec:         "240",
-		defaultMessageTimeToLiveInSec: "2400",
-		lockDurationInSec:             "120",
-		lockRenewalInSec:              "15",
-		maxConcurrentHandlers:         "1",
-		maxActiveMessages:             "100",
-		minConnectionRecoveryInSec:    "5",
-		maxConnectionRecoveryInSec:    "600",
-		maxRetriableErrorsPerSec:      "50",
+		keyConnectionString:              "fakeConnectionString",
+		keyNamespaceName:                 "",
+		keyConsumerID:                    "fakeConId",
+		keyDisableEntityManagement:       "true",
+		keyTimeoutInSec:                  "90",
+		keyHandlerTimeoutInSec:           "30",
+		keyMaxDeliveryCount:              "10",
+		keyAutoDeleteOnIdleInSec:         "240",
+		keyDefaultMessageTimeToLiveInSec: "2400",
+		keyLockDurationInSec:             "120",
+		keyLockRenewalInSec:              "15",
+		keyMaxConcurrentHandlers:         "1",
+		keyMaxActiveMessages:             "100",
+		keyMinConnectionRecoveryInSec:    "5",
+		keyMaxConnectionRecoveryInSec:    "600",
+		keyMaxRetriableErrorsPerSec:      "50",
 	}
 }
 
@@ -59,8 +59,8 @@ func TestParseServiceBusMetadata(t *testing.T) {
 
 		// assert.
 		assert.NoError(t, err)
-		assert.Equal(t, fakeProperties[connectionString], m.ConnectionString)
-		assert.Equal(t, fakeProperties[consumerID], m.ConsumerID)
+		assert.Equal(t, fakeProperties[keyConnectionString], m.ConnectionString)
+		assert.Equal(t, fakeProperties[keyConsumerID], m.ConsumerID)
 
 		assert.Equal(t, 90, m.TimeoutInSec)
 		assert.Equal(t, true, m.DisableEntityManagement)
@@ -93,8 +93,8 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[connectionString] = ""
-		fakeMetaData.Properties[namespaceName] = ""
+		fakeMetaData.Properties[keyConnectionString] = ""
+		fakeMetaData.Properties[keyNamespaceName] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -111,7 +111,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[namespaceName] = ""
+		fakeMetaData.Properties[keyNamespaceName] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -127,8 +127,8 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[namespaceName] = "fakeNamespace"
-		fakeMetaData.Properties[connectionString] = ""
+		fakeMetaData.Properties[keyNamespaceName] = "fakeNamespace"
+		fakeMetaData.Properties[keyConnectionString] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -145,7 +145,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 			Properties: fakeProperties,
 		}
 
-		fakeMetaData.Properties[namespaceName] = "fakeNamespace"
+		fakeMetaData.Properties[keyNamespaceName] = "fakeNamespace"
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -161,7 +161,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[consumerID] = ""
+		fakeMetaData.Properties[keyConsumerID] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -178,7 +178,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[timeoutInSec] = ""
+		fakeMetaData.Properties[keyTimeoutInSec] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -194,7 +194,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[timeoutInSec] = invalidNumber
+		fakeMetaData.Properties[keyTimeoutInSec] = invalidNumber
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -210,7 +210,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[disableEntityManagement] = ""
+		fakeMetaData.Properties[keyDisableEntityManagement] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -226,7 +226,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[disableEntityManagement] = "invalid_bool"
+		fakeMetaData.Properties[keyDisableEntityManagement] = "invalid_bool"
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -242,7 +242,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[handlerTimeoutInSec] = ""
+		fakeMetaData.Properties[keyHandlerTimeoutInSec] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -258,7 +258,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[handlerTimeoutInSec] = invalidNumber
+		fakeMetaData.Properties[keyHandlerTimeoutInSec] = invalidNumber
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -274,7 +274,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[lockRenewalInSec] = ""
+		fakeMetaData.Properties[keyLockRenewalInSec] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -290,7 +290,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[lockRenewalInSec] = invalidNumber
+		fakeMetaData.Properties[keyLockRenewalInSec] = invalidNumber
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -306,7 +306,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[maxRetriableErrorsPerSec] = ""
+		fakeMetaData.Properties[keyMaxRetriableErrorsPerSec] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -323,7 +323,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[maxRetriableErrorsPerSec] = invalidNumber
+		fakeMetaData.Properties[keyMaxRetriableErrorsPerSec] = invalidNumber
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -338,7 +338,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData = pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[maxRetriableErrorsPerSec] = "-1"
+		fakeMetaData.Properties[keyMaxRetriableErrorsPerSec] = "-1"
 
 		// act.
 		_, err = parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -354,7 +354,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[maxActiveMessages] = ""
+		fakeMetaData.Properties[keyMaxActiveMessages] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -370,7 +370,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[maxActiveMessages] = invalidNumber
+		fakeMetaData.Properties[keyMaxActiveMessages] = invalidNumber
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -386,7 +386,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[maxConnectionRecoveryInSec] = ""
+		fakeMetaData.Properties[keyMaxConnectionRecoveryInSec] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -402,7 +402,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[maxConnectionRecoveryInSec] = invalidNumber
+		fakeMetaData.Properties[keyMaxConnectionRecoveryInSec] = invalidNumber
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -418,7 +418,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[minConnectionRecoveryInSec] = ""
+		fakeMetaData.Properties[keyMinConnectionRecoveryInSec] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -434,7 +434,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[minConnectionRecoveryInSec] = invalidNumber
+		fakeMetaData.Properties[keyMinConnectionRecoveryInSec] = invalidNumber
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -450,7 +450,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[maxDeliveryCount] = ""
+		fakeMetaData.Properties[keyMaxDeliveryCount] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -466,7 +466,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[maxDeliveryCount] = invalidNumber
+		fakeMetaData.Properties[keyMaxDeliveryCount] = invalidNumber
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -482,7 +482,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[defaultMessageTimeToLiveInSec] = ""
+		fakeMetaData.Properties[keyDefaultMessageTimeToLiveInSec] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -498,7 +498,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[defaultMessageTimeToLiveInSec] = invalidNumber
+		fakeMetaData.Properties[keyDefaultMessageTimeToLiveInSec] = invalidNumber
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -514,7 +514,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[autoDeleteOnIdleInSec] = ""
+		fakeMetaData.Properties[keyAutoDeleteOnIdleInSec] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -530,7 +530,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[autoDeleteOnIdleInSec] = invalidNumber
+		fakeMetaData.Properties[keyAutoDeleteOnIdleInSec] = invalidNumber
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -546,7 +546,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[lockDurationInSec] = ""
+		fakeMetaData.Properties[keyLockDurationInSec] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -562,7 +562,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[lockDurationInSec] = invalidNumber
+		fakeMetaData.Properties[keyLockDurationInSec] = invalidNumber
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -578,7 +578,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[maxConcurrentHandlers] = ""
+		fakeMetaData.Properties[keyMaxConcurrentHandlers] = ""
 
 		// act.
 		m, err := parseAzureServiceBusMetadata(fakeMetaData, nil)
@@ -594,7 +594,7 @@ func TestParseServiceBusMetadata(t *testing.T) {
 		fakeMetaData := pubsub.Metadata{
 			Properties: fakeProperties,
 		}
-		fakeMetaData.Properties[maxConcurrentHandlers] = invalidNumber
+		fakeMetaData.Properties[keyMaxConcurrentHandlers] = invalidNumber
 
 		// act.
 		_, err := parseAzureServiceBusMetadata(fakeMetaData, nil)

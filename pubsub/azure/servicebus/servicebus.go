@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
@@ -33,7 +32,6 @@ import (
 	contrib_metadata "github.com/dapr/components-contrib/metadata"
 	"github.com/dapr/components-contrib/pubsub"
 	"github.com/dapr/kit/logger"
-	"github.com/dapr/kit/retry"
 )
 
 const (
@@ -75,179 +73,6 @@ func NewAzureServiceBus(logger logger.Logger) pubsub.PubSub {
 		topics:     map[string]*servicebus.Sender{},
 		topicsLock: &sync.RWMutex{},
 	}
-}
-
-func parseAzureServiceBusMetadata(meta pubsub.Metadata, logger logger.Logger) (metadata, error) {
-	m := metadata{}
-
-	/* Required configuration settings - no defaults. */
-	if val, ok := meta.Properties[connectionString]; ok && val != "" {
-		m.ConnectionString = val
-
-		// The connection string and the namespace cannot both be present.
-		if namespace, present := meta.Properties[namespaceName]; present && namespace != "" {
-			return m, fmt.Errorf("%s connectionString and namespaceName cannot both be specified", errorMessagePrefix)
-		}
-	} else if val, ok := meta.Properties[namespaceName]; ok && val != "" {
-		m.NamespaceName = val
-	} else {
-		return m, fmt.Errorf("%s missing connection string and namespace name", errorMessagePrefix)
-	}
-
-	if val, ok := meta.Properties[consumerID]; ok && val != "" {
-		m.ConsumerID = val
-	} else {
-		return m, fmt.Errorf("%s missing consumerID", errorMessagePrefix)
-	}
-
-	/* Optional configuration settings - defaults will be set by the client. */
-	m.TimeoutInSec = defaultTimeoutInSec
-	if val, ok := meta.Properties[timeoutInSec]; ok && val != "" {
-		var err error
-		m.TimeoutInSec, err = strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid timeoutInSec %s, %s", errorMessagePrefix, val, err)
-		}
-	}
-
-	m.DisableEntityManagement = defaultDisableEntityManagement
-	if val, ok := meta.Properties[disableEntityManagement]; ok && val != "" {
-		var err error
-		m.DisableEntityManagement, err = strconv.ParseBool(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid disableEntityManagement %s, %s", errorMessagePrefix, val, err)
-		}
-	}
-
-	m.HandlerTimeoutInSec = defaultHandlerTimeoutInSec
-	if val, ok := meta.Properties[handlerTimeoutInSec]; ok && val != "" {
-		var err error
-		m.HandlerTimeoutInSec, err = strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid handlerTimeoutInSec %s, %s", errorMessagePrefix, val, err)
-		}
-	}
-
-	m.LockRenewalInSec = defaultLockRenewalInSec
-	if val, ok := meta.Properties[lockRenewalInSec]; ok && val != "" {
-		var err error
-		m.LockRenewalInSec, err = strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid lockRenewalInSec %s, %s", errorMessagePrefix, val, err)
-		}
-	}
-
-	m.MaxActiveMessages = defaultMaxActiveMessages
-	if val, ok := meta.Properties[maxActiveMessages]; ok && val != "" {
-		var err error
-		m.MaxActiveMessages, err = strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid maxActiveMessages %s, %s", errorMessagePrefix, val, err)
-		}
-	}
-
-	m.MaxRetriableErrorsPerSec = defaultMaxRetriableErrorsPerSec
-	if val, ok := meta.Properties[maxRetriableErrorsPerSec]; ok && val != "" {
-		var err error
-		m.MaxRetriableErrorsPerSec, err = strconv.Atoi(val)
-		if err == nil && m.MaxRetriableErrorsPerSec < 0 {
-			err = errors.New("must not be negative")
-		}
-		if err != nil {
-			return m, fmt.Errorf("%s invalid maxRetriableErrorsPerSec %s, %s", errorMessagePrefix, val, err)
-		}
-	}
-
-	m.MinConnectionRecoveryInSec = defaultMinConnectionRecoveryInSec
-	if val, ok := meta.Properties[minConnectionRecoveryInSec]; ok && val != "" {
-		var err error
-		m.MinConnectionRecoveryInSec, err = strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid minConnectionRecoveryInSec %s, %s", errorMessagePrefix, val, err)
-		}
-	}
-
-	m.MaxConnectionRecoveryInSec = defaultMaxConnectionRecoveryInSec
-	if val, ok := meta.Properties[maxConnectionRecoveryInSec]; ok && val != "" {
-		var err error
-		m.MaxConnectionRecoveryInSec, err = strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid maxConnectionRecoveryInSec %s, %s", errorMessagePrefix, val, err)
-		}
-	}
-
-	/* Nullable configuration settings - defaults will be set by the server. */
-	if val, ok := meta.Properties[maxDeliveryCount]; ok && val != "" {
-		valAsInt, err := strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid maxDeliveryCount %s, %s", errorMessagePrefix, val, err)
-		}
-		m.MaxDeliveryCount = &valAsInt
-	}
-
-	if val, ok := meta.Properties[lockDurationInSec]; ok && val != "" {
-		valAsInt, err := strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid lockDurationInSec %s, %s", errorMessagePrefix, val, err)
-		}
-		m.LockDurationInSec = &valAsInt
-	}
-
-	if val, ok := meta.Properties[defaultMessageTimeToLiveInSec]; ok && val != "" {
-		valAsInt, err := strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid defaultMessageTimeToLiveInSec %s, %s", errorMessagePrefix, val, err)
-		}
-		m.DefaultMessageTimeToLiveInSec = &valAsInt
-	}
-
-	if val, ok := meta.Properties[autoDeleteOnIdleInSec]; ok && val != "" {
-		valAsInt, err := strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid autoDeleteOnIdleInSecKey %s, %s", errorMessagePrefix, val, err)
-		}
-		m.AutoDeleteOnIdleInSec = &valAsInt
-	}
-
-	if val, ok := meta.Properties[maxConcurrentHandlers]; ok && val != "" {
-		var err error
-		valAsInt, err := strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid maxConcurrentHandlers %s, %s", errorMessagePrefix, val, err)
-		}
-		m.MaxConcurrentHandlers = &valAsInt
-	}
-
-	m.PublishMaxRetries = defaultPublishMaxRetries
-	if val, ok := meta.Properties[publishMaxRetries]; ok && val != "" {
-		var err error
-		valAsInt, err := strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid publishMaxRetries %s, %s", errorMessagePrefix, val, err)
-		}
-		m.PublishMaxRetries = valAsInt
-	}
-
-	m.PublishInitialRetryIntervalInMs = defaultPublishInitialRetryInternalInMs
-	if val, ok := meta.Properties[publishInitialRetryInternalInMs]; ok && val != "" {
-		var err error
-		valAsInt, err := strconv.Atoi(val)
-		if err != nil {
-			return m, fmt.Errorf("%s invalid publishInitialRetryIntervalInMs %s, %s", errorMessagePrefix, val, err)
-		}
-		m.PublishInitialRetryIntervalInMs = valAsInt
-	}
-
-	/* Deprecated properties - show a warning. */
-	// TODO: Remove in the future
-	if _, ok := meta.Properties[connectionRecoveryInSec]; ok && logger != nil {
-		logger.Warn("pubsub.azure.servicebus: metadata property 'connectionRecoveryInSec' has been deprecated and is now ignored - use 'minConnectionRecoveryInSec' and 'maxConnectionRecoveryInSec' instead. See: https://docs.dapr.io/reference/components-reference/supported-pubsub/setup-azure-servicebus/")
-	}
-	if _, ok := meta.Properties[maxReconnectionAttempts]; ok && logger != nil {
-		logger.Warn("pubsub.azure.servicebus: metadata property 'maxReconnectionAttempts' has been deprecated and is now ignored. See: https://docs.dapr.io/reference/components-reference/supported-pubsub/setup-azure-servicebus/")
-	}
-
-	return m, nil
 }
 
 func (a *azureServiceBus) Init(metadata pubsub.Metadata) (err error) {
@@ -310,45 +135,14 @@ func (a *azureServiceBus) Publish(req *pubsub.PublishRequest) error {
 		return err
 	}
 
-	ebo := backoff.NewExponentialBackOff()
-	ebo.InitialInterval = time.Duration(a.metadata.PublishInitialRetryIntervalInMs) * time.Millisecond
-	bo := backoff.WithMaxRetries(ebo, uint64(a.metadata.PublishMaxRetries))
-	bo = backoff.WithContext(bo, a.publishCtx)
+	ctx, cancel := context.WithTimeout(a.publishCtx, time.Second*time.Duration(a.metadata.TimeoutInSec))
+	defer cancel()
 
-	msgID := "nil"
-	if msg.MessageID != nil {
-		msgID = *msg.MessageID
+	err = sender.SendMessage(ctx, msg, nil)
+	if err != nil {
+		return err
 	}
-	return retry.NotifyRecover(
-		func() (err error) {
-			ctx, cancel := context.WithTimeout(a.publishCtx, time.Second*time.Duration(a.metadata.TimeoutInSec))
-			defer cancel()
-
-			err = sender.SendMessage(ctx, msg, nil)
-			if err != nil {
-				var amqpError *amqp.Error
-				if errors.As(err, &amqpError) {
-					if _, ok := retriableSendingErrors[amqpError.Condition]; ok {
-						return amqpError // Retries.
-					}
-				}
-
-				if errors.Is(err, amqp.ErrConnClosed) {
-					return err // Retries.
-				}
-
-				return backoff.Permanent(err) // Does not retry.
-			}
-			return nil
-		},
-		bo,
-		func(err error, _ time.Duration) {
-			a.logger.Debugf("Could not publish service bus message (%s). Retrying...: %v", msgID, err)
-		},
-		func() {
-			a.logger.Debugf("Successfully published service bus message (%s) after it previously failed", msgID)
-		},
-	)
+	return nil
 }
 
 func (a *azureServiceBus) Subscribe(subscribeCtx context.Context, req pubsub.SubscribeRequest, handler pubsub.Handler) error {
@@ -463,8 +257,10 @@ func (a *azureServiceBus) senderForTopic(ctx context.Context, topic string) (*se
 			return nil, err
 		}
 	}
+
 	a.topicsLock.Lock()
 	defer a.topicsLock.Unlock()
+
 	sender, err = a.client.NewSender(topic, nil)
 	if err != nil {
 		return nil, err
