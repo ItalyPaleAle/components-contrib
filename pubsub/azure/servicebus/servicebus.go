@@ -38,20 +38,6 @@ const (
 	errorMessagePrefix = "azure service bus error:"
 )
 
-var retriableSendingErrors = map[amqp.ErrorCondition]struct{}{
-	"com.microsoft:server-busy'":             {},
-	amqp.ErrorResourceLimitExceeded:          {},
-	amqp.ErrorResourceLocked:                 {},
-	amqp.ErrorTransferLimitExceeded:          {},
-	amqp.ErrorInternalError:                  {},
-	amqp.ErrorIllegalState:                   {},
-	"com.microsoft:message-lock-lost":        {},
-	"com.microsoft:session-cannot-be-locked": {},
-	"com.microsoft:timeout":                  {},
-	"com.microsoft:session-lock-lost":        {},
-	"com.microsoft:store-lock-lost":          {},
-}
-
 type azureServiceBus struct {
 	metadata    metadata
 	client      *servicebus.Client
