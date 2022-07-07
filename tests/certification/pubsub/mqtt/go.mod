@@ -4,9 +4,9 @@ go 1.18
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
-	github.com/dapr/components-contrib v1.8.0-rc.1
+	github.com/dapr/components-contrib v1.8.0-rc.6
 	github.com/dapr/components-contrib/tests/certification v1.4.0-rc2
-	github.com/dapr/dapr v1.7.4-0.20220603165529-7e7d81477a0d
+	github.com/dapr/dapr v1.8.0
 	github.com/dapr/go-sdk v1.4.0
 	github.com/dapr/kit v0.0.2-0.20210614175626-b9074b64d233
 	github.com/eclipse/paho.mqtt.golang v1.3.5
