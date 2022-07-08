@@ -114,7 +114,7 @@ func TryGetQueryIndexName(props map[string]string) (string, bool) {
 	return "", false
 }
 
-// GetMetadataProperty returns a property from the metadata map, with support for aliases
+// GetMetadataProperty returns a property from the metadata map, with support for aliases.
 func GetMetadataProperty(props map[string]string, keys ...string) (val string, ok bool) {
 	for _, k := range keys {
 		val, ok = props[k]
@@ -123,4 +123,28 @@ func GetMetadataProperty(props map[string]string, keys ...string) (val string, o
 		}
 	}
 	return "", false
+}
+
+// GetIntMetadataProperty returns a property from the metadata map ensuring that it is a non-negative integer.
+// It has support for aliases.
+func GetIntMetadataProperty(props map[string]string, keys ...string) (val int, ok bool, err error) {
+	var valStr string
+	for _, k := range keys {
+		valStr, ok = props[k]
+		if !ok {
+			continue
+		}
+
+		val, err = strconv.Atoi(valStr)
+		if err != nil {
+			return 0, false, errors.Wrapf(err, "value of property '%s' is not a valid integer", k, val)
+		}
+		if val <= 0 {
+			return 0, false, fmt.Errorf("value of property '%s' must be greater than 0", k)
+		}
+
+		return val, true, nil
+	}
+	return 0, false, nil
+
 }
