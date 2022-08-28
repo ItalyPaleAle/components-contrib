@@ -15,36 +15,21 @@ package ipfs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
-	"sync"
 	"time"
 
 	ipfsHttpclient "github.com/ipfs/go-ipfs-http-client"
 	ipfsIcore "github.com/ipfs/interface-go-ipfs-core"
-	ipfsConfig "github.com/ipfs/kubo/config"
-	ipfsCore "github.com/ipfs/kubo/core"
-	ipfsCoreapi "github.com/ipfs/kubo/core/coreapi"
-	ipfsLibp2p "github.com/ipfs/kubo/core/node/libp2p"
-	ipfsLoader "github.com/ipfs/kubo/plugin/loader"
-	ipfsRepo "github.com/ipfs/kubo/repo"
-	ipfsFsrepo "github.com/ipfs/kubo/repo/fsrepo"
 	"github.com/multiformats/go-multiaddr"
 
 	"github.com/dapr/components-contrib/bindings"
 	"github.com/dapr/kit/logger"
 )
 
-const swarmKeyFile = "swarm.key"
-
-var (
-	loadPluginsOnce sync.Once
-	httpClient      *http.Client
-)
+var httpClient *http.Client
 
 func init() {
 	httpClient = &http.Client{
@@ -60,8 +45,6 @@ func init() {
 type IPFSBinding struct {
 	metadata ipfsMetadata
 	ipfsAPI  ipfsIcore.CoreAPI
-	ipfsNode *ipfsCore.IpfsNode
-	ipfsRepo ipfsRepo.Repo
 	ctx      context.Context
 	cancel   context.CancelFunc
 	logger   logger.Logger
@@ -83,35 +66,24 @@ func (b *IPFSBinding) Init(metadata bindings.Metadata) (err error) {
 		return err
 	}
 
-	if b.metadata.ExternalAPI == "" {
-		var onceErr error
-		loadPluginsOnce.Do(func() {
-			onceErr = setupPlugins("")
-		})
-		if onceErr != nil {
-			return onceErr
-		}
-
-		err = b.createNode()
-		if err != nil {
-			return fmt.Errorf("failed to start IPFS node: %v", err)
-		}
-	} else {
-		if b.metadata.ExternalAPI[0] == '/' {
-			var maddr multiaddr.Multiaddr
-			maddr, err = multiaddr.NewMultiaddr(b.metadata.ExternalAPI)
-			if err != nil {
-				return fmt.Errorf("failed to parse external API multiaddr: %v", err)
-			}
-			b.ipfsAPI, err = ipfsHttpclient.NewApiWithClient(maddr, httpClient)
-		} else {
-			b.ipfsAPI, err = ipfsHttpclient.NewURLApiWithClient(b.metadata.ExternalAPI, httpClient)
-		}
-		if err != nil {
-			return fmt.Errorf("failed to initialize external IPFS API: %v", err)
-		}
-		b.logger.Infof("Using IPFS APIs at %s", b.metadata.ExternalAPI)
+	if b.metadata.NodeAddress == "" {
+		return errors.New("metadata option 'nodeAddress' is required")
 	}
+
+	if b.metadata.NodeAddress[0] == '/' {
+		var maddr multiaddr.Multiaddr
+		maddr, err = multiaddr.NewMultiaddr(b.metadata.NodeAddress)
+		if err != nil {
+			return fmt.Errorf("failed to parse external API multiaddr: %v", err)
+		}
+		b.ipfsAPI, err = ipfsHttpclient.NewApiWithClient(maddr, httpClient)
+	} else {
+		b.ipfsAPI, err = ipfsHttpclient.NewURLApiWithClient(b.metadata.NodeAddress, httpClient)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to initialize external IPFS API: %v", err)
+	}
+	b.logger.Infof("Using IPFS APIs at %s", b.metadata.NodeAddress)
 
 	return nil
 }
@@ -120,83 +92,6 @@ func (b *IPFSBinding) Close() (err error) {
 	if b.cancel != nil {
 		b.cancel()
 		b.cancel = nil
-	}
-	if b.ipfsNode != nil {
-		err = b.ipfsNode.Close()
-		if err != nil {
-			b.logger.Errorf("Error while closing IPFS node: %v", err)
-		}
-		b.ipfsNode = nil
-	}
-	if b.ipfsRepo != nil {
-		err = b.ipfsRepo.Close()
-		if err != nil {
-			b.logger.Errorf("Error while closing IPFS repo: %v", err)
-		}
-		b.ipfsRepo = nil
-	}
-
-	return nil
-}
-
-func (b *IPFSBinding) createNode() (err error) {
-	// Init the repo if needed
-	if !ipfsFsrepo.IsInitialized(b.metadata.RepoPath) {
-		var cfg *ipfsConfig.Config
-		cfg, err = b.metadata.IPFSConfig()
-		if err != nil {
-			return err
-		}
-		err = ipfsFsrepo.Init(b.metadata.RepoPath, cfg)
-		if err != nil {
-			return err
-		}
-		if b.metadata.SwarmKey != "" {
-			skPath := filepath.Join(b.metadata.RepoPath, swarmKeyFile)
-			err = os.WriteFile(skPath, []byte(b.metadata.SwarmKey), 0o600)
-			if err != nil {
-				return fmt.Errorf("error writing swarm key to file '%s': %v", skPath, err)
-			}
-		}
-		b.logger.Infof("Initialized a new IPFS repo at path %s", b.metadata.RepoPath)
-	}
-
-	// Open the repo
-	repo, err := ipfsFsrepo.Open(b.metadata.RepoPath)
-	if err != nil {
-		return err
-	}
-	b.logger.Infof("Opened IPFS repo at path %s", b.metadata.RepoPath)
-
-	// Create the node
-	nodeOptions := &ipfsCore.BuildCfg{
-		Online: true,
-		Repo:   repo,
-	}
-	r := strings.ToLower(b.metadata.Routing)
-	switch r {
-	case "", "dht":
-		nodeOptions.Routing = ipfsLibp2p.DHTOption
-	case "dhtclient":
-		nodeOptions.Routing = ipfsLibp2p.DHTClientOption
-	case "dhtserver":
-		nodeOptions.Routing = ipfsLibp2p.DHTServerOption
-	case "none":
-		nodeOptions.Routing = ipfsLibp2p.NilRouterOption
-	default:
-		return fmt.Errorf("invalid value for metadata property 'routing'")
-	}
-	b.ipfsNode, err = ipfsCore.NewNode(b.ctx, nodeOptions)
-	if err != nil {
-		return err
-	}
-
-	b.logger.Infof("Started IPFS node %s", b.ipfsNode.Identity)
-
-	// Init API
-	b.ipfsAPI, err = ipfsCoreapi.NewCoreAPI(b.ipfsNode)
-	if err != nil {
-		return err
 	}
 
 	return nil
@@ -237,18 +132,4 @@ func (b *IPFSBinding) Invoke(ctx context.Context, req *bindings.InvokeRequest) (
 		Data:     nil,
 		Metadata: nil,
 	}, nil
-}
-
-func setupPlugins(externalPluginsPath string) error {
-	plugins, err := ipfsLoader.NewPluginLoader("")
-	if err != nil {
-		return fmt.Errorf("error loading plugins: %s", err)
-	}
-	if err := plugins.Initialize(); err != nil {
-		return fmt.Errorf("error initializing plugins: %s", err)
-	}
-	if err := plugins.Inject(); err != nil {
-		return fmt.Errorf("error initializing plugins: %s", err)
-	}
-	return nil
 }
