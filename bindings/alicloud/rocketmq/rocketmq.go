@@ -139,10 +139,10 @@ func (a *AliCloudRocketMQ) Read(ctx context.Context, handler bindings.Handler) e
 
 // Close implements cancel all listeners, see https://github.com/dapr/components-contrib/issues/779
 func (a *AliCloudRocketMQ) Close() error {
-	defer a.wg.Wait()
 	if a.closed.CompareAndSwap(false, true) {
 		close(a.closeCh)
 	}
+	a.wg.Wait()
 	return nil
 }
 
