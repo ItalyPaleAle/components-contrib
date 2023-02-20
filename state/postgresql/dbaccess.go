@@ -15,6 +15,7 @@ package postgresql
 
 import (
 	"context"
+	"io"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -24,6 +25,9 @@ import (
 
 // dbAccess is a private interface which enables unit testing of PostgreSQL.
 type dbAccess interface {
+	io.Closer
+	state.Transactioner
+
 	Init(ctx context.Context, metadata state.Metadata) error
 	Set(ctx context.Context, req *state.SetRequest) error
 	BulkSet(ctx context.Context, req []state.SetRequest) error
@@ -32,7 +36,6 @@ type dbAccess interface {
 	BulkDelete(ctx context.Context, req []state.DeleteRequest) error
 	ExecuteMulti(ctx context.Context, req *state.TransactionalStateRequest) error
 	Query(ctx context.Context, req *state.QueryRequest) (*state.QueryResponse, error)
-	Close() error // io.Closer
 }
 
 // Interface that contains methods for querying.

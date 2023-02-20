@@ -109,3 +109,15 @@ type QueryRequest struct {
 	Query    query.Query       `json:"query"`
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
+
+type TransactionStartRequest struct {
+	Key      string            `json:"key"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+type TransactionCommitRequest struct {
+	Key         string            `json:"key"`
+	Value       any               `json:"value"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	ContentType *string           `json:"contentType,omitempty"`
+}

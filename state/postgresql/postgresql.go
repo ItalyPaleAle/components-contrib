@@ -95,6 +95,10 @@ func (p *PostgreSQL) Query(ctx context.Context, req *state.QueryRequest) (*state
 	return p.dbaccess.Query(ctx, req)
 }
 
+func (p *PostgreSQL) Transaction(ctx context.Context, req state.TransactionStartRequest) (res *state.GetResponse, commit func(req state.TransactionCommitRequest) error, err error) {
+	return p.dbaccess.Transaction(ctx, req)
+}
+
 // Close implements io.Closer.
 func (p *PostgreSQL) Close() error {
 	if p.dbaccess != nil {

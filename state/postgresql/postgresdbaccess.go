@@ -262,7 +262,11 @@ func (p *PostgresDBAccess) BulkSet(parentCtx context.Context, req []state.SetReq
 }
 
 // Get returns data from the database. If data does not exist for the key an empty state.GetResponse will be returned.
-func (p *PostgresDBAccess) Get(parentCtx context.Context, req *state.GetRequest) (*state.GetResponse, error) {
+func (p *PostgresDBAccess) Get(ctx context.Context, req *state.GetRequest) (*state.GetResponse, error) {
+	return p.doGet(ctx, p.db, req, false)
+}
+
+func (p *PostgresDBAccess) doGet(parentCtx context.Context, db dbquerier, req *state.GetRequest, lock bool) (*state.GetResponse, error) {
 	if req.Key == "" {
 		return nil, errors.New("missing key in get operation")
 	}
@@ -274,11 +278,14 @@ func (p *PostgresDBAccess) Get(parentCtx context.Context, req *state.GetRequest)
 	)
 	query := `SELECT
 			value, isbinary, xmin AS etag
-		FROM %s
+		FROM ` + p.metadata.TableName + `
 			WHERE
 				key = $1
 				AND (expiredate IS NULL OR expiredate >= CURRENT_TIMESTAMP)`
-	err := p.db.QueryRow(parentCtx, fmt.Sprintf(query, p.metadata.TableName), req.Key).
+	if lock {
+		query += "FOR UPDATE"
+	}
+	err := p.db.QueryRow(parentCtx, query, req.Key).
 		Scan(&value, &isBinary, &etag)
 	if err != nil {
 		// If no rows exist, return an empty response, otherwise return the error.
@@ -597,4 +604,77 @@ func (p *PostgresDBAccess) rollbackTx(parentCtx context.Context, tx pgx.Tx, meth
 	if rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
 		p.logger.Errorf("Failed to rollback transaction in %s: %v", methodName, rollbackErr)
 	}
+}
+
+func (p *PostgresDBAccess) Transaction(ctx context.Context, req state.TransactionStartRequest) (res *state.GetResponse, commit func(req state.TransactionCommitRequest) error, err error) {
+	tx, err := p.beginTx(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Get the current value
+	res, err = p.doGet(ctx, tx, &state.GetRequest{
+		Key: req.Key,
+	}, true)
+	if err != nil {
+		p.rollbackTx(ctx, tx, "Transaction")
+		return nil, nil, fmt.Errorf("failed to get current value: %w", err)
+	}
+
+	// If there's no row, create one
+	if res == nil || res.ETag == nil {
+		err = p.doSet(ctx, tx, &state.SetRequest{
+			Key:   req.Key,
+			Value: []byte{},
+			Options: state.SetStateOption{
+				Concurrency: state.FirstWrite,
+			},
+		})
+		if err != nil {
+			p.rollbackTx(ctx, tx, "Transaction")
+			return nil, nil, fmt.Errorf("failed to create value: %w", err)
+		}
+	}
+
+	// Return a method to commit the transaction
+	done := make(chan struct{})
+	commit = func(cr state.TransactionCommitRequest) error {
+		defer p.rollbackTx(ctx, tx, "Transaction-CommitFn")
+
+		// Update the value in the database
+		err := p.doSet(ctx, tx, &state.SetRequest{
+			Key:         cr.Key,
+			Value:       cr.Value,
+			ContentType: cr.ContentType,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to update value: %w", err)
+		}
+
+		// Commit the transaction
+		commitCtx, commitCancel := context.WithTimeout(ctx, p.metadata.timeout)
+		err = tx.Commit(commitCtx)
+		commitCancel()
+		if err != nil {
+			return fmt.Errorf("failed to commit transaction: %w", err)
+		}
+
+		// Report all as done
+		close(done)
+
+		return nil
+	}
+
+	// In background wait for commit or context cancelation
+	go func() {
+		select {
+		case <-done:
+			// All done, nop
+		case <-ctx.Done():
+			// Rollback the transaction
+			p.rollbackTx(ctx, tx, "Transaction-CommitFn")
+		}
+	}()
+
+	return res, commit, nil
 }

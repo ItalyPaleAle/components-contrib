@@ -22,3 +22,7 @@ type TransactionalStore interface {
 	Init(ctx context.Context, metadata Metadata) error
 	Multi(ctx context.Context, request *TransactionalStateRequest) error
 }
+
+type Transactioner interface {
+	Transaction(ctx context.Context, req TransactionStartRequest) (res *GetResponse, commit func(req TransactionCommitRequest) error, err error)
+}
