@@ -641,14 +641,23 @@ func (p *PostgresDBAccess) Transaction(ctx context.Context, req state.Transactio
 	commit = func(cr state.TransactionCommitRequest) error {
 		defer p.rollbackTx(ctx, tx, "Transaction-CommitFn")
 
-		// Update the value in the database
-		err := p.doSet(ctx, tx, &state.SetRequest{
-			Key:         cr.Key,
-			Value:       cr.Value,
-			ContentType: cr.ContentType,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to update value: %w", err)
+		// Update or delete the value in the database
+		if cr.DeleteValue {
+			err = p.doDelete(ctx, tx, &state.DeleteRequest{
+				Key: cr.Key,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to delete value: %w", err)
+			}
+		} else if cr.UpdateValue != nil {
+			err := p.doSet(ctx, tx, &state.SetRequest{
+				Key:         cr.Key,
+				Value:       cr.UpdateValue,
+				ContentType: cr.ContentType,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to update value: %w", err)
+			}
 		}
 
 		// Commit the transaction
@@ -672,7 +681,8 @@ func (p *PostgresDBAccess) Transaction(ctx context.Context, req state.Transactio
 			// All done, nop
 		case <-ctx.Done():
 			// Rollback the transaction
-			p.rollbackTx(ctx, tx, "Transaction-CommitFn")
+			// We must use a background context because ctx is done already
+			p.rollbackTx(context.Background(), tx, "Transaction-CommitFn")
 		}
 	}()
 

@@ -117,7 +117,8 @@ type TransactionStartRequest struct {
 
 type TransactionCommitRequest struct {
 	Key         string            `json:"key"`
-	Value       any               `json:"value"`
+	UpdateValue any               `json:"updateValue"` // If not nil, updates the value of the document
+	DeleteValue bool              `json:"deleteValue"` // If set to true, deletes the document
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	ContentType *string           `json:"contentType,omitempty"`
 }
