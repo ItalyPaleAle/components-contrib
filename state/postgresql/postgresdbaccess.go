@@ -625,7 +625,7 @@ func (p *PostgresDBAccess) Transaction(ctx context.Context, req state.Transactio
 	if res == nil || res.ETag == nil {
 		err = p.doSet(ctx, tx, &state.SetRequest{
 			Key:   req.Key,
-			Value: []uint8{},
+			Value: map[string]any{},
 			Options: state.SetStateOption{
 				Concurrency: state.FirstWrite,
 			},
@@ -633,11 +633,6 @@ func (p *PostgresDBAccess) Transaction(ctx context.Context, req state.Transactio
 		if err != nil {
 			p.rollbackTx(ctx, tx, "Transaction")
 			return nil, nil, fmt.Errorf("failed to create value: %w", err)
-		}
-	} else {
-		// Handle the case where the value is the string "null"
-		if string(res.Data) == "null" {
-			res.Data = nil
 		}
 	}
 
