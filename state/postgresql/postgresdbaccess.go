@@ -285,7 +285,7 @@ func (p *PostgresDBAccess) doGet(parentCtx context.Context, db dbquerier, req *s
 	if lock {
 		query += "FOR UPDATE"
 	}
-	err := p.db.QueryRow(parentCtx, query, req.Key).
+	err := db.QueryRow(parentCtx, query, req.Key).
 		Scan(&value, &isBinary, &etag)
 	if err != nil {
 		// If no rows exist, return an empty response, otherwise return the error.
