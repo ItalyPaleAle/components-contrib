@@ -34,8 +34,7 @@ import (
 )
 
 const (
-	requestTimeout              = 30 * time.Second
-	metadataKeyDefaultNamespace = "defaultNamespace"
+	requestTimeout = 30 * time.Second
 )
 
 type kubeSecretsCrypto struct {
