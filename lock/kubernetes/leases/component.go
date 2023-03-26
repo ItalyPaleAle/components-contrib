@@ -15,6 +15,7 @@ package leases
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"reflect"
@@ -29,6 +30,7 @@ import (
 	"github.com/dapr/components-contrib/lock"
 	contribMetadata "github.com/dapr/components-contrib/metadata"
 	"github.com/dapr/kit/logger"
+	"github.com/martinlindhe/base36"
 )
 
 const (
@@ -89,6 +91,7 @@ func (k *KubernetesLeaseLock) TryLock(parentCtx context.Context, req *lock.TryLo
 		Leases(namespace).
 		Create(ctx, leaseObj, metaV1.CreateOptions{})
 	if err != nil {
+		// Check if the lease already exists
 		return &lock.TryLockResponse{}, fmt.Errorf("failed to create lease: %w", err)
 	}
 	fmt.Println(leaseObj)
@@ -117,6 +120,7 @@ func (r *KubernetesLeaseLock) Unlock(ctx context.Context, req *lock.UnlockReques
 // parseResourceID returns the lease name and optional namespace from the resource ID parameter.
 // If the key parameter doesn't contain a namespace, returns the default one.
 func (k *KubernetesLeaseLock) parseResourceID(param string) (namespace string, lease string, err error) {
+	// Extract the namespace if present
 	parts := strings.Split(param, "/")
 	switch len(parts) {
 	case 2:
@@ -132,6 +136,11 @@ func (k *KubernetesLeaseLock) parseResourceID(param string) (namespace string, l
 	if namespace == "" {
 		err = errors.New("resource ID doesn't have a namespace and the default namespace isn't set")
 	}
+
+	// The lease name can contain a prefix and other characters that cannot be used for a Kubernetes resource name
+	// So, we need to compute its hash
+	h := sha256.Sum224([]byte(lease))
+	lease = strings.ToLower(base36.EncodeBytes(h[:]))
 
 	return
 }
