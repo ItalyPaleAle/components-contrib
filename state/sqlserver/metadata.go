@@ -30,6 +30,9 @@ import (
 	"github.com/dapr/kit/ptr"
 )
 
+// KeyType defines type of the table identifier.
+type KeyType string
+
 const (
 	connectionStringKey  = "connectionString"
 	tableNameKey         = "tableName"
@@ -49,8 +52,20 @@ const (
 	defaultTable           = "state"
 	defaultMetaTable       = "dapr_metadata"
 	defaultCleanupInterval = time.Hour
+
+	StringKeyType  KeyType = "string"  // StringKeyType defines a key of type string
+	UUIDKeyType    KeyType = "uuid"    // UUIDKeyType defines a key of type UUID/GUID
+	IntegerKeyType KeyType = "integer" // IntegerKeyType defines a key of type integer
+	InvalidKeyType KeyType = "invalid" // InvalidKeyType defines an invalid key type
 )
 
+// +metadata state.postgresql/v1
+// builtinAuthenticationProfiles:
+//   - name: "azuread"
+//
+// authenticationProfiles:
+//   - title: "Connection string"
+//     description: "Authenticate using a Connection String."
 type sqlServerMetadata struct {
 	ConnectionString  string
 	DatabaseName      string
@@ -295,4 +310,25 @@ func isValidIndexedPropertyType(s string) bool {
 	}
 
 	return true
+}
+
+// KeyTypeFromString tries to create a KeyType from a string value.
+func KeyTypeFromString(k string) (KeyType, error) {
+	switch k {
+	case string(StringKeyType):
+		return StringKeyType, nil
+	case string(UUIDKeyType):
+		return UUIDKeyType, nil
+	case string(IntegerKeyType):
+		return IntegerKeyType, nil
+	}
+
+	return InvalidKeyType, errors.New("invalid key type")
+}
+
+// IndexedProperty defines a indexed property.
+type IndexedProperty struct {
+	ColumnName string `json:"column"`
+	Property   string `json:"property"`
+	Type       string `json:"type"`
 }

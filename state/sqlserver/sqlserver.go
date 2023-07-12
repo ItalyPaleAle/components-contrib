@@ -31,53 +31,29 @@ import (
 	"github.com/dapr/kit/ptr"
 )
 
-// KeyType defines type of the table identifier.
-type KeyType string
-
-// KeyTypeFromString tries to create a KeyType from a string value.
-func KeyTypeFromString(k string) (KeyType, error) {
-	switch k {
-	case string(StringKeyType):
-		return StringKeyType, nil
-	case string(UUIDKeyType):
-		return UUIDKeyType, nil
-	case string(IntegerKeyType):
-		return IntegerKeyType, nil
-	}
-
-	return InvalidKeyType, errors.New("invalid key type")
-}
-
-const (
-	// StringKeyType defines a key of type string.
-	StringKeyType KeyType = "string"
-
-	// UUIDKeyType defines a key of type UUID/GUID.
-	UUIDKeyType KeyType = "uuid"
-
-	// IntegerKeyType defines a key of type integer.
-	IntegerKeyType KeyType = "integer"
-
-	// InvalidKeyType defines an invalid key type.
-	InvalidKeyType KeyType = "invalid"
-)
+// +component
+// type: state
+// name: postgresql
+// version: v1
+// status: stable
+// title: "PostgreSQL"
+// urls:
+//   - title: Reference
+//     url: https://docs.dapr.io/reference/components-reference/supported-state-stores/setup-postgresql/
 
 // New creates a new instance of a SQL Server transaction store.
 func New(logger logger.Logger) state.Store {
 	s := &SQLServer{
-		features:        []state.Feature{state.FeatureETag, state.FeatureTransactional},
+		features: []state.Feature{
+			state.FeatureETag,
+			state.FeatureTransactional,
+			state.FeatureTTL,
+		},
 		logger:          logger,
 		migratorFactory: newMigration,
 	}
 	s.BulkStore = state.NewDefaultBulkStore(s)
 	return s
-}
-
-// IndexedProperty defines a indexed property.
-type IndexedProperty struct {
-	ColumnName string `json:"column"`
-	Property   string `json:"property"`
-	Type       string `json:"type"`
 }
 
 // SQLServer defines a MS SQL Server based state store.
@@ -236,12 +212,6 @@ func (s *SQLServer) executeDelete(ctx context.Context, db dbExecutor, req *state
 
 	// successful deletion, or noop if no ETAG specified
 	return nil
-}
-
-// TvpDeleteTableStringKey defines a table type with string key.
-type TvpDeleteTableStringKey struct {
-	ID         string
-	RowVersion []byte
 }
 
 // Get returns an entity from store.

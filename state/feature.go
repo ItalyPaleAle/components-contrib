@@ -24,6 +24,8 @@ const (
 	FeatureTransactional Feature = "TRANSACTIONAL"
 	// FeatureQueryAPI is the feature that performs query operations.
 	FeatureQueryAPI Feature = "QUERY_API"
+	// FeatureTTL is the feature that supports TTLs.
+	FeatureTTL Feature = "TTL"
 )
 
 // Feature names a feature that can be implemented by PubSub components.
