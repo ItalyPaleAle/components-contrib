@@ -14,24 +14,23 @@ limitations under the License.
 package embedded
 
 import (
-	"github.com/dapr/dapr/pkg/runtime"
+	"github.com/dapr/dapr/pkg/runtime/registry"
 	"github.com/dapr/kit/logger"
 
 	// Name resolutions.
-	nrConsul "github.com/dapr/components-contrib/nameresolution/consul"
+
 	nrKubernetes "github.com/dapr/components-contrib/nameresolution/kubernetes"
 	nrMdns "github.com/dapr/components-contrib/nameresolution/mdns"
 
 	nrLoader "github.com/dapr/dapr/pkg/components/nameresolution"
 )
 
-func CommonComponents(log logger.Logger) []runtime.Option {
-	registry := nrLoader.NewRegistry()
-	registry.Logger = log
-	registry.RegisterComponent(nrMdns.NewResolver, "mdns")
-	registry.RegisterComponent(nrKubernetes.NewResolver, "kubernetes")
-	registry.RegisterComponent(nrConsul.NewResolver, "consul")
-	return []runtime.Option{
-		runtime.WithNameResolutions(registry),
-	}
+func GetComponentRegistry(log logger.Logger) *registry.Options {
+	nrRegistry := nrLoader.NewRegistry()
+	nrRegistry.Logger = log
+	nrRegistry.RegisterComponent(nrMdns.NewResolver, "mdns")
+	nrRegistry.RegisterComponent(nrKubernetes.NewResolver, "kubernetes")
+
+	return registry.NewOptions().
+		WithNameResolutions(nrRegistry)
 }

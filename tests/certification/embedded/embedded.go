@@ -14,21 +14,19 @@ limitations under the License.
 package embedded
 
 import (
-	"context"
-	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
-	"github.com/dapr/dapr/pkg/acl"
-	global_config "github.com/dapr/dapr/pkg/config"
 	env "github.com/dapr/dapr/pkg/config/env"
+	"github.com/dapr/dapr/pkg/config/protocol"
 	"github.com/dapr/dapr/pkg/cors"
 	"github.com/dapr/dapr/pkg/modes"
-	"github.com/dapr/dapr/pkg/operator/client"
-	"github.com/dapr/dapr/pkg/resiliency"
 	"github.com/dapr/dapr/pkg/runtime"
-	"github.com/dapr/dapr/pkg/runtime/security"
+	"github.com/dapr/dapr/pkg/runtime/registry"
 	"github.com/dapr/kit/logger"
+	"github.com/dapr/kit/ptr"
 	"github.com/phayes/freeport"
 )
 
@@ -38,7 +36,7 @@ const (
 	allowedOrigins      = cors.DefaultAllowedOrigins
 	mode                = modes.StandaloneMode
 	config              = "config.yaml"
-	componentsPath      = "./components"
+	resourcesPath       = "./components"
 	profilePort         = runtime.DefaultProfilePort
 	enableProfiling     = true
 	maxConcurrency      = -1
@@ -56,46 +54,46 @@ var log = logger.NewLogger("dapr.runtime")
 
 type Option func(config *runtime.Config)
 
-func WithAppProtocol(protocol runtime.Protocol, port int) Option {
+func WithAppProtocol(protocol string, port int) Option {
 	return func(config *runtime.Config) {
-		config.ApplicationProtocol = protocol
-		config.ApplicationPort = port
+		config.AppProtocol = protocol
+		config.ApplicationPort = strconv.Itoa(port)
 	}
 }
 
 func WithoutApp() Option {
 	return func(config *runtime.Config) {
-		config.ApplicationPort = 0
+		config.ApplicationPort = "0"
 	}
 }
 
 func WithDaprHTTPPort(port int) Option {
 	return func(config *runtime.Config) {
-		config.HTTPPort = port
+		config.DaprHTTPPort = strconv.Itoa(port)
 	}
 }
 
 func WithDaprGRPCPort(port int) Option {
 	return func(config *runtime.Config) {
-		config.APIGRPCPort = port
+		config.DaprAPIGRPCPort = strconv.Itoa(port)
 	}
 }
 
 func WithDaprInternalGRPCPort(port int) Option {
 	return func(config *runtime.Config) {
-		config.InternalGRPCPort = port
+		config.DaprInternalGRPCPort = strconv.Itoa(port)
 	}
 }
 
 func WithListenAddresses(addresses []string) Option {
 	return func(config *runtime.Config) {
-		config.APIListenAddresses = addresses
+		config.DaprAPIListenAddresses = strings.Join(addresses, ",")
 	}
 }
 
 func WithResourcesPath(path string) Option {
 	return func(config *runtime.Config) {
-		config.Standalone.ResourcesPath[0] = path
+		config.ResourcesPath = []string{path}
 	}
 }
 
@@ -106,19 +104,19 @@ func WithComponentsPath(path string) Option {
 
 func WithProfilePort(port int) Option {
 	return func(config *runtime.Config) {
-		config.ProfilePort = port
+		config.ProfilePort = strconv.Itoa(port)
 	}
 }
 
 func WithGracefulShutdownDuration(d time.Duration) Option {
 	return func(config *runtime.Config) {
-		config.GracefulShutdownDuration = d
+		config.DaprGracefulShutdownSeconds = int(d.Seconds())
 	}
 }
 
 func WithAPILoggingEnabled(enabled bool) Option {
 	return func(config *runtime.Config) {
-		config.EnableAPILogging = enabled
+		config.EnableAPILogging = &enabled
 	}
 }
 
@@ -128,50 +126,54 @@ func WithProfilingEnabled(enabled bool) Option {
 	}
 }
 
+func WithComponentRegistry(reg *registry.Options) Option {
+	return func(config *runtime.Config) {
+		config.Registry = reg
+	}
+}
+
 func NewRuntime(appID string, opts ...Option) (*runtime.DaprRuntime, *runtime.Config, error) {
-	var err error
-	runtimeConfig := runtime.NewRuntimeConfig(runtime.NewRuntimeConfigOpts{
-		ID:                           appID,
-		HTTPPort:                     daprHTTPPort,
-		InternalGRPCPort:             daprInternalGRPC,
-		APIGRPCPort:                  daprAPIGRPCPort,
-		AppPort:                      appPort,
-		ProfilePort:                  profilePort,
-		APIListenAddresses:           []string{"127.0.0.1"},
-		AppProtocol:                  string(runtime.HTTPProtocol),
-		Mode:                         string(mode),
-		PlacementAddresses:           []string{},
-		AllowedOrigins:               allowedOrigins,
-		ResourcesPath:                []string{componentsPath},
-		EnableProfiling:              enableProfiling,
-		MaxConcurrency:               maxConcurrency,
-		MTLSEnabled:                  enableMTLS,
-		SentryAddress:                sentryAddress,
-		MaxRequestBodySize:           maxRequestBodySize,
-		ReadBufferSize:               runtime.DefaultReadBufferSize,
-		GracefulShutdownDuration:     time.Second,
-		EnableAPILogging:             true,
-		DisableBuiltinK8sSecretStore: false,
-	})
+	runtimeConfig := &runtime.Config{
+		AppID:                       appID,
+		DaprHTTPPort:                strconv.Itoa(daprHTTPPort),
+		DaprInternalGRPCPort:        strconv.Itoa(daprInternalGRPC),
+		DaprAPIGRPCPort:             strconv.Itoa(daprAPIGRPCPort),
+		ApplicationPort:             strconv.Itoa(appPort),
+		ProfilePort:                 strconv.Itoa(profilePort),
+		DaprAPIListenAddresses:      "127.0.0.1",
+		AppProtocol:                 string(protocol.HTTPProtocol),
+		Mode:                        string(mode),
+		AllowedOrigins:              allowedOrigins,
+		ResourcesPath:               []string{resourcesPath},
+		EnableProfiling:             enableProfiling,
+		AppMaxConcurrency:           maxConcurrency,
+		SentryAddress:               sentryAddress,
+		DaprHTTPMaxRequestSize:      maxRequestBodySize,
+		DaprHTTPReadBufferSize:      runtime.DefaultReadBufferSize,
+		DaprGracefulShutdownSeconds: 1,
+		EnableAPILogging:            ptr.Of(true),
+	}
 
 	for _, opt := range opts {
 		opt(runtimeConfig)
 	}
 
-	if runtimeConfig.InternalGRPCPort == 0 {
-		if runtimeConfig.InternalGRPCPort, err = freeport.GetFreePort(); err != nil {
+	if runtimeConfig.DaprInternalGRPCPort == "" {
+		port, err := freeport.GetFreePort()
+		if err != nil {
 			return nil, nil, err
 		}
+		runtimeConfig.DaprInternalGRPCPort = strconv.Itoa(port)
 	}
 
 	variables := map[string]string{
-		env.AppID:           runtimeConfig.ID,
-		env.AppPort:         fmt.Sprintf("%d", runtimeConfig.ApplicationPort),
+		env.AppID:           runtimeConfig.AppID,
+		env.AppPort:         runtimeConfig.ApplicationPort,
 		env.HostAddress:     "127.0.0.1",
-		env.DaprPort:        fmt.Sprintf("%d", runtimeConfig.InternalGRPCPort),
-		env.DaprGRPCPort:    fmt.Sprintf("%d", runtimeConfig.APIGRPCPort),
-		env.DaprHTTPPort:    fmt.Sprintf("%d", runtimeConfig.HTTPPort),
-		env.DaprProfilePort: fmt.Sprintf("%d", runtimeConfig.ProfilePort),
+		env.DaprPort:        runtimeConfig.DaprInternalGRPCPort,
+		env.DaprGRPCPort:    runtimeConfig.DaprAPIGRPCPort,
+		env.DaprHTTPPort:    runtimeConfig.DaprHTTPPort,
+		env.DaprProfilePort: runtimeConfig.ProfilePort,
 	}
 
 	for key, value := range variables {
@@ -181,50 +183,6 @@ func NewRuntime(appID string, opts ...Option) (*runtime.DaprRuntime, *runtime.Co
 		}
 	}
 
-	var globalConfig *global_config.Configuration
-	var configErr error
-
-	if enableMTLS {
-		if runtimeConfig.CertChain, err = security.GetCertChain(); err != nil {
-			return nil, nil, err
-		}
-	}
-
-	var accessControlList *global_config.AccessControlList
-	var namespace string
-
-	if config != "" {
-		switch modes.DaprMode(mode) {
-		case modes.KubernetesMode:
-			client, conn, clientErr := client.GetOperatorClient(context.Background(), controlPlaneAddress, security.TLSServerName, runtimeConfig.CertChain)
-			if clientErr != nil {
-				return nil, nil, err
-			}
-			defer conn.Close()
-			namespace = os.Getenv("NAMESPACE")
-			podName := os.Getenv("POD_NAME")
-			globalConfig, configErr = global_config.LoadKubernetesConfiguration(config, namespace, podName, client)
-		case modes.StandaloneMode:
-			globalConfig, _, configErr = global_config.LoadStandaloneConfiguration(config)
-		}
-
-		if configErr != nil {
-			log.Debugf("Config error: %v", configErr)
-		}
-	}
-
-	if configErr != nil {
-		return nil, nil, fmt.Errorf("error loading configuration: %w", configErr)
-	}
-	if globalConfig == nil {
-		log.Info("loading default configuration")
-		globalConfig = global_config.LoadDefaultConfiguration()
-	}
-
-	accessControlList, err = acl.ParseAccessControlSpec(globalConfig.Spec.AccessControlSpec, true)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return runtime.NewDaprRuntime(runtimeConfig, globalConfig, accessControlList, &resiliency.NoOp{}), runtimeConfig, nil
+	rt, err := runtime.FromConfig(runtimeConfig)
+	return rt, runtimeConfig, err
 }
