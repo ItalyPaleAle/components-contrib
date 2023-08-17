@@ -13,6 +13,10 @@ limitations under the License.
 
 package state
 
+import (
+	"time"
+)
+
 const (
 	// GetRespMetaKeyTTLExpireTime is the key for the metadata value of the TTL
 	// expire time. Value is a RFC3339 formatted string.
@@ -51,4 +55,13 @@ type QueryItem struct {
 	ETag        *string `json:"etag,omitempty"`
 	Error       string  `json:"error,omitempty"`
 	ContentType *string `json:"contentType,omitempty"`
+}
+
+// GetWorkflowStateResponse is the response returned by GetWorkflowState.
+type GetWorkflowStateResponse struct {
+	Inbox        [][]byte
+	History      [][]byte
+	CustomStatus *string
+	Generation   uint64
+	Expiration   *time.Time
 }

@@ -26,10 +26,11 @@ import (
 
 // Performs migrations for the database schema
 type migrations struct {
-	Logger            logger.Logger
-	Conn              *sql.DB
-	StateTableName    string
-	MetadataTableName string
+	Logger                   logger.Logger
+	Conn                     *sql.DB
+	StateTableName           string
+	MetadataTableName        string
+	WorkflowsTableNamePrefix string
 }
 
 // Perform the required migrations
@@ -163,7 +164,7 @@ func (m migrations) createMetadataTable(ctx context.Context, db querier) error {
 	return nil
 }
 
-var allMigrations = [1]func(ctx context.Context, db querier, m *migrations) error{
+var allMigrations = [2]func(ctx context.Context, db querier, m *migrations) error{
 	// Migration 0: create the state table
 	func(ctx context.Context, db querier, m *migrations) error {
 		// We need to add an "IF NOT EXISTS" because we may be migrating from when we did not use a metadata table
@@ -185,6 +186,53 @@ var allMigrations = [1]func(ctx context.Context, db querier, m *migrations) erro
 		if err != nil {
 			return fmt.Errorf("failed to create state table: %w", err)
 		}
+		return nil
+	},
+	// Migration 1: create the workflows tables
+	func(ctx context.Context, db querier, m *migrations) error {
+		// Workflows table
+		wfTableName := m.WorkflowsTableNamePrefix
+		m.Logger.Infof("Creating workflows table '%s'", wfTableName)
+		_, err := db.ExecContext(
+			ctx,
+			fmt.Sprintf(
+				`CREATE TABLE %s (
+					actor_id TEXT NOT NULL PRIMARY KEY,
+					generation INTEGER NOT NULL,
+					custom_status TEXT,
+					expiration_time TIMESTAMP DEFAULT NULL,
+					update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+				)`,
+				wfTableName,
+			),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create workflows table '%s': %w", wfTableName, err)
+		}
+
+		// Workflows inbox and history tables
+		for _, suffix := range [2]string{"inbox", "history"} {
+			tableName := m.WorkflowsTableNamePrefix + "_" + suffix
+			m.Logger.Infof("Creating workflows %s table '%s'", suffix, tableName)
+			_, err = db.ExecContext(
+				ctx,
+				fmt.Sprintf(
+					`CREATE TABLE %s (
+						actor_id TEXT NOT NULL,
+						seq INTEGER NOT NULL,
+						event_data BLOB NOT NULL,
+						FOREIGN KEY (actor_id)
+							REFERENCES %s(actor_id) ON DELETE CASCADE,
+						PRIMARY KEY (actor_id, seq)
+					)`,
+					tableName, wfTableName,
+				),
+			)
+			if err != nil {
+				return fmt.Errorf("failed to create workflows %s table '%s': %w", suffix, tableName, err)
+			}
+		}
+
 		return nil
 	},
 }

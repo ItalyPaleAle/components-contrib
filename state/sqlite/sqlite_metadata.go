@@ -24,24 +24,26 @@ import (
 )
 
 const (
-	defaultTableName         = "state"
-	defaultMetadataTableName = "metadata"
-	defaultCleanupInternal   = time.Duration(0) // Disabled by default
-	defaultTimeout           = 20 * time.Second // Default timeout for database requests, in seconds
-	defaultBusyTimeout       = 2 * time.Second
+	defaultTableName                = "state"
+	defaultMetadataTableName        = "metadata"
+	defaultWorkflowsTableNamePrefix = "workflows"
+	defaultCleanupInternal          = time.Duration(0) // Disabled by default
+	defaultTimeout                  = 20 * time.Second // Default timeout for database requests, in seconds
+	defaultBusyTimeout              = 2 * time.Second
 
 	errMissingConnectionString = "missing connection string"
 	errInvalidIdentifier       = "invalid identifier: %s" // specify identifier type, e.g. "table name"
 )
 
 type sqliteMetadataStruct struct {
-	ConnectionString  string        `json:"connectionString" mapstructure:"connectionString"`
-	TableName         string        `json:"tableName" mapstructure:"tableName"`
-	MetadataTableName string        `json:"metadataTableName" mapstructure:"metadataTableName"`
-	TimeoutInSeconds  string        `json:"timeoutInSeconds" mapstructure:"timeoutInSeconds"`
-	CleanupInterval   time.Duration `json:"cleanupInterval" mapstructure:"cleanupInterval"`
-	BusyTimeout       time.Duration `json:"busyTimeout" mapstructure:"busyTimeout"`
-	DisableWAL        bool          `json:"disableWAL" mapstructure:"disableWAL"` // Disable WAL journaling. You should not use WAL if the database is stored on a network filesystem (or data corruption may happen). This is ignored if the database is in-memory.
+	ConnectionString         string        `json:"connectionString" mapstructure:"connectionString"`
+	TableName                string        `json:"tableName" mapstructure:"tableName"`
+	MetadataTableName        string        `json:"metadataTableName" mapstructure:"metadataTableName"`
+	WorkflowsTableNamePrefix string        `json:"workflowsTableNamePrefix" mapstructure:"workflowsTableNamePrefix"`
+	TimeoutInSeconds         string        `json:"timeoutInSeconds" mapstructure:"timeoutInSeconds"`
+	CleanupInterval          time.Duration `json:"cleanupInterval" mapstructure:"cleanupInterval"`
+	BusyTimeout              time.Duration `json:"busyTimeout" mapstructure:"busyTimeout"`
+	DisableWAL               bool          `json:"disableWAL" mapstructure:"disableWAL"` // Disable WAL journaling. You should not use WAL if the database is stored on a network filesystem (or data corruption may happen). This is ignored if the database is in-memory.
 
 	// Deprecated properties, maintained for backwards-compatibility
 	CleanupIntervalInSeconds string `json:"cleanupIntervalInSeconds" mapstructure:"cleanupIntervalInSeconds"`
@@ -101,11 +103,16 @@ func (m *sqliteMetadataStruct) InitWithMetadata(meta state.Metadata) error {
 	return nil
 }
 
+func (m sqliteMetadataStruct) GetWorkflowsTables() (wfTable, wfHistoryTable, wfInboxTable string) {
+	return m.WorkflowsTableNamePrefix, m.WorkflowsTableNamePrefix + "_history", m.WorkflowsTableNamePrefix + "_inbox"
+}
+
 // Reset the object
 func (m *sqliteMetadataStruct) reset() {
 	m.ConnectionString = ""
 	m.TableName = defaultTableName
 	m.MetadataTableName = defaultMetadataTableName
+	m.WorkflowsTableNamePrefix = defaultWorkflowsTableNamePrefix
 	m.TimeoutInSeconds = ""
 	m.CleanupInterval = defaultCleanupInternal
 	m.BusyTimeout = defaultBusyTimeout

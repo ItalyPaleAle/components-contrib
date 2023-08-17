@@ -45,6 +45,9 @@ type DBAccess interface {
 	Delete(ctx context.Context, req *state.DeleteRequest) error
 	BulkGet(ctx context.Context, req []state.GetRequest) ([]state.BulkGetResponse, error)
 	ExecuteMulti(ctx context.Context, reqs []state.TransactionalStateOperation) error
+	GetWorkflowState(ctx context.Context, req state.GetWorkflowStateRequest) (*state.GetWorkflowStateResponse, error)
+	SetWorkflowState(ctx context.Context, req state.SetWorkflowStateRequest) error
+	DeleteWorkflowState(ctx context.Context, req state.DeleteWorkflowStateRequest) error
 	Close() error
 }
 
@@ -98,10 +101,11 @@ func (a *sqliteDBAccess) Init(ctx context.Context, md state.Metadata) error {
 
 	// Performs migrations
 	migrate := &migrations{
-		Logger:            a.logger,
-		Conn:              a.db,
-		MetadataTableName: a.metadata.MetadataTableName,
-		StateTableName:    a.metadata.TableName,
+		Logger:                   a.logger,
+		Conn:                     a.db,
+		MetadataTableName:        a.metadata.MetadataTableName,
+		StateTableName:           a.metadata.TableName,
+		WorkflowsTableNamePrefix: a.metadata.WorkflowsTableNamePrefix,
 	}
 	err = migrate.Perform(ctx)
 	if err != nil {
@@ -193,19 +197,27 @@ func (a *sqliteDBAccess) getConnectionString() (string, error) {
 	}
 
 	// Add pragma values
+	var hasForeignKeyPragma bool
 	if len(qs["_pragma"]) == 0 {
-		qs["_pragma"] = make([]string, 0, 2)
+		qs["_pragma"] = make([]string, 0, 3)
 	} else {
 		for _, p := range qs["_pragma"] {
 			p = strings.ToLower(p)
-			if strings.HasPrefix(p, "busy_timeout") {
+			switch {
+			case strings.HasPrefix(p, "busy_timeout"):
 				a.logger.Error("Cannot set `_pragma=busy_timeout` option in the connection string; please use the `busyTimeout` metadata property instead")
 				return "", errors.New("found forbidden option '_pragma=busy_timeout' in the connection string")
-			} else if strings.HasPrefix(p, "journal_mode") {
+			case strings.HasPrefix(p, "journal_mode"):
 				a.logger.Error("Cannot set `_pragma=journal_mode` option in the connection string; please use the `disableWAL` metadata property instead")
 				return "", errors.New("found forbidden option '_pragma=journal_mode' in the connection string")
+			case strings.HasPrefix(p, "foreign_keys"):
+				a.logger.Error("Cannot set `_pragma=foreign_keys` option in the connection string")
+				return "", errors.New("found forbidden option '_pragma=foreign_keys' in the connection string")
 			}
 		}
+	}
+	if !hasForeignKeyPragma {
+		qs["_pragma"] = append(qs["_pragma"], "foreign_keys(ON)")
 	}
 	if a.metadata.BusyTimeout > 0 {
 		qs["_pragma"] = append(qs["_pragma"], fmt.Sprintf("busy_timeout(%d)", a.metadata.BusyTimeout.Milliseconds()))
@@ -476,7 +488,7 @@ func (a *sqliteDBAccess) doSet(parentCtx context.Context, db querier, req *state
 		stmt = "INSERT OR REPLACE INTO " + a.metadata.TableName + `
 				(key, value, is_binary, etag, update_time, expiration_time)
 			VALUES(?, ?, ?, ?, CURRENT_TIMESTAMP, ` + expiration + `)`
-		ctx, cancel := context.WithTimeout(context.Background(), a.metadata.timeout)
+		ctx, cancel := context.WithTimeout(parentCtx, a.metadata.timeout)
 		defer cancel()
 		res, err = db.ExecContext(ctx, stmt, req.Key, requestValue, isBinary, newEtag, req.Key)
 	} else {
@@ -490,7 +502,7 @@ func (a *sqliteDBAccess) doSet(parentCtx context.Context, db querier, req *state
 				key = ?
 				AND etag = ?
 				AND (expiration_time IS NULL OR expiration_time > CURRENT_TIMESTAMP)`
-		ctx, cancel := context.WithTimeout(context.Background(), a.metadata.timeout)
+		ctx, cancel := context.WithTimeout(parentCtx, a.metadata.timeout)
 		defer cancel()
 		res, err = db.ExecContext(ctx, stmt, requestValue, newEtag, isBinary, req.Key, *req.ETag)
 	}
@@ -598,6 +610,247 @@ func (a *sqliteDBAccess) doDelete(parentCtx context.Context, db querier, req *st
 
 	if rows == 0 && req.ETag != nil && *req.ETag != "" {
 		return state.NewETagError(state.ETagMismatch, nil)
+	}
+
+	return nil
+}
+
+// GetWorkflowState returns the state of a workflow.
+func (a *sqliteDBAccess) GetWorkflowState(parentCtx context.Context, req state.GetWorkflowStateRequest) (*state.GetWorkflowStateResponse, error) {
+	err := req.Validate()
+	if err != nil {
+		return nil, err
+	}
+
+	// Perform this in a transaction for consistency
+	tx, err := a.db.BeginTx(parentCtx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	wfTable, wfHistoryTable, wfInboxTable := a.metadata.GetWorkflowsTables()
+
+	// Load workflow data
+	stmt := `SELECT generation, custom_status, expiration_time FROM ` + wfTable + `
+		WHERE
+			actor_id = ?
+			AND (expiration_time IS NULL OR expiration_time > CURRENT_TIMESTAMP)`
+	ctx, cancel := context.WithTimeout(parentCtx, a.metadata.timeout)
+	defer cancel()
+	var (
+		customStatus sql.NullString
+		expiration   sql.NullTime
+		res          state.GetWorkflowStateResponse
+	)
+	err = tx.QueryRowContext(ctx, stmt, req.ActorID).Scan(&res.Generation, &customStatus, &expiration)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to load workflow data: %w", err)
+	}
+	if customStatus.Valid {
+		res.CustomStatus = &customStatus.String
+	}
+	if expiration.Valid {
+		res.Expiration = &expiration.Time
+	}
+
+	// Load history
+	res.History, err = a.getWorkflowEvents(parentCtx, tx, wfHistoryTable, req.ActorID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load workflow history: %w", err)
+	}
+
+	// Load inbox
+	res.Inbox, err = a.getWorkflowEvents(parentCtx, tx, wfInboxTable, req.ActorID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load workflow inbox: %w", err)
+	}
+
+	return &res, nil
+}
+
+func (a *sqliteDBAccess) getWorkflowEvents(parentCtx context.Context, tx *sql.Tx, table string, actorID string) ([][]byte, error) {
+	ctx, cancel := context.WithTimeout(parentCtx, a.metadata.timeout)
+	defer cancel()
+
+	stmt := `SELECT seq, event_data FROM ` + table + `
+		WHERE actor_id = ? ORDER BY seq ASC`
+	rows, err := tx.QueryContext(ctx, stmt, actorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var expectSeq uint64
+	res := make([][]byte, 0)
+	for rows.Next() {
+		var (
+			seq       uint64
+			eventData []byte
+		)
+		err = rows.Scan(&seq, &eventData)
+		if err != nil {
+			return nil, err
+		}
+		if seq != expectSeq {
+			return nil, fmt.Errorf("found row with sequence %d, but expected %d", seq, expectSeq)
+		}
+		expectSeq++
+		res = append(res, eventData)
+	}
+	return res, nil
+}
+
+// SetWorkflowState sets or updates the state of a workflow.
+func (a *sqliteDBAccess) SetWorkflowState(parentCtx context.Context, req state.SetWorkflowStateRequest) error {
+	err := req.Validate()
+	if err != nil {
+		return err
+	}
+
+	// Perform this in a transaction for consistency
+	tx, err := a.db.BeginTx(parentCtx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	wfTable, wfHistoryTable, wfInboxTable := a.metadata.GetWorkflowsTables()
+
+	// If generation, custom status, or expiration have changed, update the workflow data
+	var (
+		updateStmt   string
+		updateValues = make([]any, 0, 4)
+	)
+	if req.Generation != nil {
+		updateStmt = "generation = ?"
+		updateValues = append(updateValues, *req.Generation)
+	}
+	if req.CustomStatus != nil {
+		if updateStmt != "" {
+			updateStmt += ", "
+		}
+		updateStmt += "custom_status = ?"
+		updateValues = append(updateValues, *req.CustomStatus)
+	}
+	if req.Expiration != nil {
+		if updateStmt != "" {
+			updateStmt += ", "
+		}
+		updateStmt += "expiration_time = ?"
+		if req.Expiration.IsZero() {
+			updateValues = append(updateValues, sql.NullTime{})
+		} else {
+			updateValues = append(updateValues, req.Expiration)
+		}
+	}
+	if updateStmt != "" {
+		updateValues = append(updateValues, req.ActorID)
+		stmt := `UPDATE ` + wfTable + ` SET ` + updateStmt + ` WHERE actor_id = ?`
+		ctx, cancel := context.WithTimeout(parentCtx, a.metadata.timeout)
+		defer cancel()
+		res, err := tx.ExecContext(ctx, stmt, updateValues...)
+		if err != nil {
+			return fmt.Errorf("failed to update workflow data: %w", err)
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return errors.New("failed to update workflow data: no row was updated")
+		}
+	}
+
+	// Delete all inbox
+	err = a.deleteWorkflowRecords(parentCtx, tx, wfInboxTable, req.ActorID)
+	if err != nil {
+		return fmt.Errorf("failed to delete workflow inbox events: %w", err)
+	}
+
+	// Delete all history if we are resetting the workflow
+	if req.Reset {
+		err = a.deleteWorkflowRecords(parentCtx, tx, wfHistoryTable, req.ActorID)
+		if err != nil {
+			return fmt.Errorf("failed to delete workflow history events: %w", err)
+		}
+	}
+
+	// Save the updated inbox
+	err = a.saveWorkflowEvents(parentCtx, tx, wfInboxTable, req.ActorID, 0, req.Inbox)
+	if err != nil {
+		return fmt.Errorf("failed to save workflow inbox: %w", err)
+	}
+
+	// Append the history records
+	err = a.saveWorkflowEvents(parentCtx, tx, wfHistoryTable, req.ActorID, req.HistoryOffset, req.Inbox)
+	if err != nil {
+		return fmt.Errorf("failed to save workflow history: %w", err)
+	}
+
+	return nil
+}
+
+func (a *sqliteDBAccess) deleteWorkflowRecords(parentCtx context.Context, tx *sql.Tx, table string, actorID string) error {
+	ctx, cancel := context.WithTimeout(parentCtx, a.metadata.timeout)
+	defer cancel()
+	_, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE actor_id = ?`, actorID)
+	return err
+}
+
+func (a *sqliteDBAccess) saveWorkflowEvents(parentCtx context.Context, tx *sql.Tx, table string, actorID string, offset uint64, events [][]byte) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	args := make([]any, len(events)*2)
+	stmt := strings.Builder{}
+	stmt.WriteString("INSERT INTO " + table + " (actor_id, seq, event_data) VALUES ")
+	for i, event := range events {
+		if i > 0 {
+			stmt.WriteRune(',')
+		}
+		// Yes, we are passing the offset not as a parameter... We can do that because we know it's a number so it should be safe
+		stmt.WriteString("(?, " + strconv.FormatUint(offset, 10) + ", ?)")
+		args = append(args, actorID, event)
+		offset++
+	}
+
+	ctx, cancel := context.WithTimeout(parentCtx, a.metadata.timeout)
+	defer cancel()
+
+	res, err := tx.ExecContext(ctx, stmt.String(), args...)
+	if err != nil {
+		return err
+	}
+
+	affected, _ := res.RowsAffected()
+	if affected != int64(len(events)) {
+		return fmt.Errorf("invalid number of rows inserted: %d, but expected %d", affected, len(events))
+	}
+	return err
+}
+
+// DeleteWorkflowState deletes the state of a workflow.
+func (a *sqliteDBAccess) DeleteWorkflowState(parentCtx context.Context, req state.DeleteWorkflowStateRequest) error {
+	err := req.Validate()
+	if err != nil {
+		return err
+	}
+
+	// We just need to delete the row from the workflows table
+	// Because we're using foreign keys, the rows in the other tables are deleted automatically
+	wfTable, _, _ := a.metadata.GetWorkflowsTables()
+
+	ctx, cancel := context.WithTimeout(parentCtx, a.metadata.timeout)
+	defer cancel()
+
+	res, err := a.db.ExecContext(ctx, `DELETE FROM `+wfTable+` WHERE actor_id = ?`, req.ActorID)
+	if err != nil {
+		return fmt.Errorf("failed to delete workflow state: %w", err)
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return errors.New("failed to delete workflow state: no row affected")
 	}
 
 	return nil

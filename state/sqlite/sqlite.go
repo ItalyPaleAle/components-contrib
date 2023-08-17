@@ -100,6 +100,21 @@ func (s *SQLiteStore) Multi(ctx context.Context, request *state.TransactionalSta
 	return s.dbaccess.ExecuteMulti(ctx, request.Operations)
 }
 
+// GetWorkflowState returns the state of a workflow.
+func (s *SQLiteStore) GetWorkflowState(ctx context.Context, req state.GetWorkflowStateRequest) (*state.GetWorkflowStateResponse, error) {
+	return s.dbaccess.GetWorkflowState(ctx, req)
+}
+
+// SetWorkflowState sets or updates the state of a workflow.
+func (s *SQLiteStore) SetWorkflowState(ctx context.Context, req state.SetWorkflowStateRequest) error {
+	return s.dbaccess.SetWorkflowState(ctx, req)
+}
+
+// DeleteWorkflowState deletes the state of a workflow.
+func (s *SQLiteStore) DeleteWorkflowState(ctx context.Context, req state.DeleteWorkflowStateRequest) error {
+	return s.dbaccess.DeleteWorkflowState(ctx, req)
+}
+
 // Close implements io.Closer.
 func (s *SQLiteStore) Close() error {
 	if s.dbaccess != nil {

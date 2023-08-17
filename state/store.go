@@ -43,6 +43,16 @@ type TransactionalStore interface {
 	Multi(ctx context.Context, request *TransactionalStateRequest) error
 }
 
+// WorkflowStateStore is an interface for state stores that support methods used by workflows to store their state.
+type WorkflowStateStore interface {
+	// GetWorkflowState returns the state of a workflow.
+	GetWorkflowState(ctx context.Context, req GetWorkflowStateRequest) (*GetWorkflowStateResponse, error)
+	// SetWorkflowState sets or updates the state of a workflow.
+	SetWorkflowState(ctx context.Context, req SetWorkflowStateRequest) error
+	// DeleteWorkflowState deletes the state of a workflow.
+	DeleteWorkflowState(ctx context.Context, req DeleteWorkflowStateRequest) error
+}
+
 // TransactionalStoreMultiMaxSize is an optional interface transactional state stores can implement to indicate the maximum size for a transaction.
 type TransactionalStoreMultiMaxSize interface {
 	MultiMaxSize() int

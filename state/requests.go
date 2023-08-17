@@ -14,6 +14,9 @@ limitations under the License.
 package state
 
 import (
+	"errors"
+	"time"
+
 	"github.com/dapr/components-contrib/state/query"
 )
 
@@ -142,4 +145,61 @@ type TransactionalStateOperation interface {
 type QueryRequest struct {
 	Query    query.Query       `json:"query"`
 	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+type GetWorkflowStateRequest struct {
+	// Actor ID
+	ActorID string
+}
+
+// Validate the request object.
+func (r GetWorkflowStateRequest) Validate() error {
+	if r.ActorID == "" {
+		return errors.New("actor ID is empty")
+	}
+	return nil
+}
+
+type SetWorkflowStateRequest struct {
+	// Actor ID
+	ActorID string
+	// If non-nil, sets or replaces the generation
+	Generation *uint64
+	// If non-nil, sets or replaces the custom status
+	CustomStatus *string
+	// If non-nil, sets or replaces the record's expiration time
+	Expiration *time.Time
+	// If true, inbox and history will be reset
+	Reset bool
+	// Offset to start appending history entries to
+	HistoryOffset uint64
+	// Entries to append to the history
+	// The first entry will have sequence number set to HistoryOffset
+	AppendHistory [][]byte
+	// Replaces the inbox with the given values
+	Inbox [][]byte
+}
+
+// Validate the request object.
+func (r SetWorkflowStateRequest) Validate() error {
+	if r.ActorID == "" {
+		return errors.New("actor ID is empty")
+	}
+	if r.Reset && r.HistoryOffset != 0 {
+		return errors.New("history offset must be 0 when reset is set")
+	}
+	return nil
+}
+
+type DeleteWorkflowStateRequest struct {
+	// Actor ID
+	ActorID string
+}
+
+// Validate the request object.
+func (r DeleteWorkflowStateRequest) Validate() error {
+	if r.ActorID == "" {
+		return errors.New("actor ID is empty")
+	}
+	return nil
 }
