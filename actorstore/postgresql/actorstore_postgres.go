@@ -15,11 +15,16 @@ package postgresql
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync/atomic"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/dapr/components-contrib/actorstore"
+	sqlinternal "github.com/dapr/components-contrib/internal/component/sql"
+	pgmigrations "github.com/dapr/components-contrib/internal/component/sql/migrations/postgres"
 	"github.com/dapr/kit/logger"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // NewPostgreSQLActorStore creates a new instance of an actor store backed by PostgreSQL
@@ -33,15 +38,22 @@ type PostgreSQL struct {
 	logger   logger.Logger
 	metadata pgMetadata
 	db       *pgxpool.Pool
+	running  atomic.Bool
 }
 
 func (p *PostgreSQL) Init(ctx context.Context, md actorstore.Metadata) error {
+	if !p.running.CompareAndSwap(false, true) {
+		return errors.New("already running")
+	}
+
+	// Parse metadata
 	err := p.metadata.InitWithMetadata(md)
 	if err != nil {
 		p.logger.Errorf("Failed to parse metadata: %v", err)
 		return err
 	}
 
+	// Connect to the database
 	config, err := p.metadata.GetPgxPoolConfig()
 	if err != nil {
 		p.logger.Error(err)
@@ -57,28 +69,72 @@ func (p *PostgreSQL) Init(ctx context.Context, md actorstore.Metadata) error {
 		return err
 	}
 
-	pingCtx, pingCancel := context.WithTimeout(ctx, p.metadata.Timeout)
-	err = p.db.Ping(pingCtx)
-	pingCancel()
+	err = p.Ping(ctx)
 	if err != nil {
 		err = fmt.Errorf("failed to ping the database: %w", err)
 		p.logger.Error(err)
 		return err
 	}
 
-	err = p.migrateFn(ctx, p.db, MigrateOptions{
-		Logger:            p.logger,
-		StateTableName:    p.metadata.TableName,
-		MetadataTableName: p.metadata.MetadataTableName,
-	})
+	// Migrate schema
+	err = p.performMigrations(ctx)
 	if err != nil {
+		p.logger.Error(err)
 		return err
 	}
+
+	return nil
 }
 
-func (p *PostgreSQL) Ping(ctx context.Context) error
+func (p *PostgreSQL) performMigrations(ctx context.Context) error {
+	m := pgmigrations.Migrations{
+		DB:                p.db,
+		Logger:            p.logger,
+		MetadataTableName: p.metadata.MetadataTableName,
+	}
 
-func (p *PostgreSQL) Close() error
+	var (
+		hostsTable           = p.metadata.TablePrefix + "hosts"
+		hostsActorTypesTable = p.metadata.TablePrefix + "hosts_actor_types"
+		actorsTable          = p.metadata.TablePrefix + "actors"
+	)
+
+	return m.Perform(ctx, []sqlinternal.MigrationFn{
+		// Migration 1: create the tables
+		func(ctx context.Context) error {
+			p.logger.Info("Creating tables for actors state. Hosts table: '%s'. Hosts actor types table: '%s'. Actors table: '%s'", hostsTable, hostsActorTypesTable, actorsTable)
+			_, err := p.db.Exec(ctx,
+				fmt.Sprintf(migration1Query, hostsTable, hostsActorTypesTable, actorsTable),
+			)
+			if err != nil {
+				return fmt.Errorf("failed to create state table: %w", err)
+			}
+			return nil
+		},
+	})
+}
+
+func (p *PostgreSQL) Ping(ctx context.Context) error {
+	if !p.running.Load() {
+		return errors.New("not running")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	err := p.db.Ping(ctx)
+	cancel()
+	return err
+}
+
+func (p *PostgreSQL) Close() (err error) {
+	if !p.running.Load() {
+		return nil
+	}
+
+	if p.db != nil {
+		err = p.Close()
+	}
+	return err
+}
 
 func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.AddActorHostRequest) (string, error)
 
@@ -86,6 +142,8 @@ func (p *PostgreSQL) UpdateActorHost(ctx context.Context, actorHostID string, pr
 
 func (p *PostgreSQL) RemoveActorHost(ctx context.Context, actorHostID string) error
 
-func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef) (actorstore.LookupActorResponse, error)
+func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef) (actorstore.LookupActorResponse, error) {
+
+}
 
 func (p *PostgreSQL) RemoveActor(ctx context.Context, ref actorstore.ActorRef) error
