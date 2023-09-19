@@ -27,7 +27,7 @@ var (
 	// ErrActorHostConflict is returned by AddActorHost when a host is already registered at the same address.
 	ErrActorHostConflict = errors.New("an actor host is already registered at the same address")
 
-	// ErrActorHostNotFound is returned by RemoveActorHost when the host doesn't exist.
+	// ErrActorHostNotFound is returned by RemoveActorHost and UpdateActorHost when the host doesn't exist.
 	ErrActorHostNotFound = errors.New("actor host not found")
 
 	// ErrNoActorHost is returned by LookupActor when there's no suitable host for actors of the given type.

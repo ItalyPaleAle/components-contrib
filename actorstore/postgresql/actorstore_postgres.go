@@ -26,6 +26,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/dapr/components-contrib/actorstore"
+	pginterfaces "github.com/dapr/components-contrib/internal/component/postgresql/interfaces"
 	sqlinternal "github.com/dapr/components-contrib/internal/component/sql"
 	pgmigrations "github.com/dapr/components-contrib/internal/component/sql/migrations/postgres"
 	"github.com/dapr/kit/logger"
@@ -177,34 +178,149 @@ func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.Add
 		// Register each supported actor type
 		queryCtx, queryCancel = context.WithTimeout(ctx, p.metadata.Timeout)
 		defer queryCancel()
-		rows := make([][]any, len(properties.ActorTypes))
-		for i, t := range properties.ActorTypes {
-			rows[i] = []any{
-				hostID,
-				t.ActorType,
-				t.IdleTimeout,
-			}
-		}
-		n, err := tx.CopyFrom(
-			queryCtx,
-			pgx.Identifier{hostsActorTypesTable},
-			[]string{"host_id", "actor_type", "actor_idle_timeout"},
-			pgx.CopyFromRows(rows),
-		)
+		err = insertHostActorTypes(queryCtx, tx, hostID, properties.ActorTypes, hostsActorTypesTable, p.metadata.Timeout)
 		if err != nil {
-			return "", fmt.Errorf("failed to insert supported actor types in hosts actor types table: %w", err)
-		}
-		if n != int64(len(properties.ActorTypes)) {
-			return "", fmt.Errorf("failed to insert supported actor types in hosts actor types table: inserted %d rows, but expected %d", n, len(properties.ActorTypes))
+			return "", err
 		}
 
 		return hostID, nil
 	})
 }
 
-func (p *PostgreSQL) UpdateActorHost(ctx context.Context, actorHostID string, properties actorstore.UpdateActorHostRequest) error
+// Inserts the list of supported actor types for a host.
+// Note that the context must have a timeout already applied if needed.
+func insertHostActorTypes(ctx context.Context, tx pgx.Tx, actorHostID string, actorTypes []actorstore.ActorHostType, hostsActorTypesTable string, timeout time.Duration) error {
+	if len(actorTypes) == 0 {
+		// Nothing to do here
+		return nil
+	}
 
-func (p *PostgreSQL) RemoveActorHost(ctx context.Context, actorHostID string) error
+	queryCtx, queryCancel := context.WithTimeout(ctx, timeout)
+	defer queryCancel()
+
+	// Use "CopyFrom" to insert multiple records more efficiently
+	rows := make([][]any, len(actorTypes))
+	for i, t := range actorTypes {
+		rows[i] = []any{
+			actorHostID,
+			t.ActorType,
+			t.IdleTimeout,
+		}
+	}
+	n, err := tx.CopyFrom(
+		queryCtx,
+		pgx.Identifier{hostsActorTypesTable},
+		[]string{"host_id", "actor_type", "actor_idle_timeout"},
+		pgx.CopyFromRows(rows),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to insert supported actor types in hosts actor types table: %w", err)
+	}
+	if n != int64(len(actorTypes)) {
+		return fmt.Errorf("failed to insert supported actor types in hosts actor types table: inserted %d rows, but expected %d", n, len(actorTypes))
+	}
+
+	return nil
+}
+
+func (p *PostgreSQL) UpdateActorHost(ctx context.Context, actorHostID string, properties actorstore.UpdateActorHostRequest) (err error) {
+	// We need at least _something_ to update
+	// Note that:
+	// ActorTypes==nil -> Do not update actor types
+	// ActorTypes==slice with 0 elements -> Remove all actor types
+	if actorHostID == "" || (properties.LastHealthCheck == nil && properties.ActorTypes == nil) {
+		return actorstore.ErrInvalidRequestMissingParameters
+	}
+
+	var (
+		hostsTable           = p.metadata.TableName(pgTableHosts)
+		hostsActorTypesTable = p.metadata.TableName(pgTableHostsActorTypes)
+	)
+
+	// Let's avoid creating a transaction if we are not updating actor types (which involve updating 2 tables)
+	// This saves at least 2 round-trips to the database and improves locking
+	if properties.ActorTypes == nil {
+		err = updateHostsTable(ctx, p.db, actorHostID, properties, hostsTable, p.metadata.Timeout)
+	} else {
+		// Because we need to update 2 tables, we need a transaction
+		_, err = executeInTransaction(ctx, p.logger, p.db, p.metadata.Timeout, func(ctx context.Context, tx pgx.Tx) (z struct{}, zErr error) {
+			// Update all hosts properties, besides the list of supported actor types
+			zErr = updateHostsTable(ctx, tx, actorHostID, properties, hostsTable, p.metadata.Timeout)
+			if zErr != nil {
+				return z, zErr
+			}
+
+			// Next, delete all existing actor
+			// This query could affect 0 rows, and that's fine
+			queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+			defer queryCancel()
+			_, zErr = p.db.Exec(queryCtx,
+				fmt.Sprintf("DELETE FROM %s WHERE host_id = $1", hostsActorTypesTable),
+				actorHostID,
+			)
+			if zErr != nil {
+				return z, fmt.Errorf("failed to delete old host actor types: %w", zErr)
+			}
+
+			// Register the new supported actor types (if any)
+			zErr = insertHostActorTypes(ctx, tx, actorHostID, properties.ActorTypes, hostsActorTypesTable, p.metadata.Timeout)
+			if zErr != nil {
+				return z, zErr
+			}
+
+			return z, nil
+		})
+	}
+
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Updates the hosts table with the given properties.
+// Does not update ActorTypes which impacts a separate table.
+func updateHostsTable(ctx context.Context, db pginterfaces.DBQuerier, actorHostID string, properties actorstore.UpdateActorHostRequest, hostsTable string, timeout time.Duration) error {
+	// For now, LastHealthCheck is the only property that can be updated in the hosts table
+	if properties.LastHealthCheck == nil {
+		return nil
+	}
+
+	queryCtx, queryCancel := context.WithTimeout(ctx, timeout)
+	defer queryCancel()
+	res, err := db.Exec(queryCtx,
+		fmt.Sprintf("UPDATE %s SET host_last_healthcheck = $2 WHERE host_id = $1", hostsTable),
+		actorHostID, *properties.LastHealthCheck,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update actor host: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return actorstore.ErrActorHostNotFound
+	}
+	return nil
+}
+
+func (p *PostgreSQL) RemoveActorHost(ctx context.Context, actorHostID string) error {
+	if actorHostID == "" {
+		return actorstore.ErrInvalidRequestMissingParameters
+	}
+
+	// We need to delete from the hosts table only
+	// Other table references rows from the hosts table through foreign keys, so records are deleted from there automatically (and atomically)
+	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	defer queryCancel()
+	q := fmt.Sprintf("DELETE FROM %s WHERE host_id = $1", p.metadata.TableName(pgTableHosts))
+	res, err := p.db.Exec(queryCtx, q, actorHostID)
+	if err != nil {
+		return fmt.Errorf("failed to remove actor host: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return actorstore.ErrActorHostNotFound
+	}
+
+	return nil
+}
 
 func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef) (res actorstore.LookupActorResponse, err error) {
 	if ref.ActorType == "" || ref.ActorID == "" {
@@ -255,7 +371,24 @@ func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef) (
 	return res, nil
 }
 
-func (p *PostgreSQL) RemoveActor(ctx context.Context, ref actorstore.ActorRef) error
+func (p *PostgreSQL) RemoveActor(ctx context.Context, ref actorstore.ActorRef) error {
+	if ref.ActorType == "" || ref.ActorID == "" {
+		return actorstore.ErrInvalidRequestMissingParameters
+	}
+
+	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	defer queryCancel()
+	q := fmt.Sprintf("DELETE FROM %s WHERE actor_type = $1 AND actor_id = $2", p.metadata.TableName(pgTableActors))
+	res, err := p.db.Exec(queryCtx, q, ref.ActorType, ref.ActorID)
+	if err != nil {
+		return fmt.Errorf("failed to remove actor: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return actorstore.ErrActorNotFound
+	}
+
+	return nil
+}
 
 // Returns true if the error is a unique constraint violation error, such as a duplicate unique index or primary key.
 func isUniqueViolationError(err error) bool {
