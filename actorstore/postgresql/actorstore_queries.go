@@ -14,12 +14,13 @@ limitations under the License.
 package postgresql
 
 // Query for performing migration #1
-// Arguents are:
-// - Name of the "hosts" table
-// - Name of the "hosts_actor_types" table
-// - Name of the "actors" table
+//
+// fmt.Sprintf arguments:
+// 1. Name of the "hosts" table
+// 2. Name of the "hosts_actor_types" table
+// 3. Name of the "actors" table
 const migration1Query = `CREATE TABLE %[1]s (
-  host_id uuid PRIMARY KEY NOT NULL,
+  host_id uuid PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
   host_address text NOT NULL,
   host_app_id text NOT NULL,
   host_actors_api_level integer NOT NULL,
@@ -50,3 +51,39 @@ CREATE TABLE %[3]s (
   PRIMARY KEY (actor_type, actor_id),
   FOREIGN KEY (host_id) REFERENCES %[1]s (host_id) ON DELETE CASCADE
 );`
+
+// Query for looking up an actor, or creating it ex novo.
+//
+// Note that in case of 2 requests at the same time when the row doesn't exist, this may fail with a race condition
+// You will get a unique constraint violation. The query can be retried in that case.
+//
+// Query arguments:
+// 1. Actor type
+// 2. Actor ID
+//
+// fmt.Sprintf arguments:
+// 1. Name of the "hosts" table
+// 2. Name of the "hosts_actor_types" table
+// 3. Name of the "actors" table
+//
+// Inspired by: https://stackoverflow.com/a/72033548/192024
+const lookupActorQuery = `WITH new_row AS (
+  INSERT INTO %[3]s (actor_type, actor_id, host_id, host_app_id, host_address, actor_idle_timeout, actor_activation)
+    SELECT $1, $2, %[2]s.host_id, %[3]s.host_app_id, %[3]s.host_address, %[2]s.actor_idle_timeout, CURRENT_TIMESTAMP
+      FROM %[2]s, %[3]s
+      WHERE
+        %[2]s.actor_type = $1 AND
+        %[3]s.host_id = %[2]s.host_id AND
+        NOT EXISTS (
+          SELECT * FROM %[3]s WHERE actor_type = $1 AND actor_id = $2
+        )
+      ORDER BY random() LIMIT 1
+    RETURNING host_app_id, host_address, actor_idle_timeout
+)
+(
+  SELECT host_app_id, host_address, actor_idle_timeout
+    FROM %[3]s
+    WHERE actor_type = $1 AND actor_id = $2
+  UNION ALL
+  SELECT * FROM new_row
+) LIMIT 1;`

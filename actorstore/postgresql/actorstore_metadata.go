@@ -22,6 +22,14 @@ import (
 	"github.com/dapr/components-contrib/metadata"
 )
 
+type pgTable string
+
+const (
+	pgTableHosts           pgTable = "hosts"
+	pgTableHostsActorTypes pgTable = "hosts_actor_types"
+	pgTableActors          pgTable = "actors"
+)
+
 type pgMetadata struct {
 	pgauth.PostgresAuthMetadata `mapstructure:",squash"`
 
@@ -55,4 +63,8 @@ func (m *pgMetadata) InitWithMetadata(meta actorstore.Metadata) error {
 	}
 
 	return nil
+}
+
+func (m pgMetadata) TableName(table pgTable) string {
+	return m.TablePrefix + string(table)
 }

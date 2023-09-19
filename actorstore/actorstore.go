@@ -24,6 +24,9 @@ import (
 )
 
 var (
+	// ErrActorHostConflict is returned by AddActorHost when a host is already registered at the same address.
+	ErrActorHostConflict = errors.New("an actor host is already registered at the same address")
+
 	// ErrActorHostNotFound is returned by RemoveActorHost when the host doesn't exist.
 	ErrActorHostNotFound = errors.New("actor host not found")
 
@@ -32,6 +35,9 @@ var (
 
 	// ErrActorNotFound is returned by RemoveActor when the actor doesn't exist.
 	ErrActorNotFound = errors.New("actor not found")
+
+	// ErrInvalidRequestMissingParameters is returned by various methods when the request is missing required parameters.
+	ErrInvalidRequestMissingParameters = errors.New("invalid request: missing required parameters")
 )
 
 // Store is the interface for the actor store.
