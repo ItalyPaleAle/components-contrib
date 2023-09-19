@@ -108,7 +108,7 @@ func (p *PostgreSQL) performMigrations(ctx context.Context) error {
 	return m.Perform(ctx, []sqlinternal.MigrationFn{
 		// Migration 1: create the tables
 		func(ctx context.Context) error {
-			p.logger.Info("Creating tables for actors state. Hosts table: '%s'. Hosts actor types table: '%s'. Actors table: '%s'", hostsTable, hostsActorTypesTable, actorsTable)
+			p.logger.Infof("Creating tables for actors state. Hosts table: '%s'. Hosts actor types table: '%s'. Actors table: '%s'", hostsTable, hostsActorTypesTable, actorsTable)
 			_, err := p.db.Exec(ctx,
 				fmt.Sprintf(migration1Query, hostsTable, hostsActorTypesTable, actorsTable),
 			)
