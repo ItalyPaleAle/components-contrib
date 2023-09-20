@@ -44,8 +44,6 @@ CREATE TABLE %[3]s (
   actor_type text NOT NULL,
   actor_id text NOT NULL,
   host_id uuid NOT NULL,
-  host_app_id text NOT NULL,
-  host_address text NOT NULL,
   actor_idle_timeout integer NOT NULL,
   actor_activation timestamp with time zone NOT NULL,
   PRIMARY KEY (actor_type, actor_id),
@@ -54,35 +52,55 @@ CREATE TABLE %[3]s (
 
 // Query for looking up an actor, or creating it ex novo.
 //
-// Note that in case of 2 requests at the same time when the row doesn't exist, this may fail with a race condition
+// Note that in case of 2 requests at the same time when the row doesn't exist, this may fail with a race condition.
 // You will get a unique constraint violation. The query can be retried in that case.
 //
 // Query arguments:
 // 1. Actor type
 // 2. Actor ID
+// 3. Health check interval
 //
 // fmt.Sprintf arguments:
-// 1. Name of the "hosts_actor_types" table
-// 2. Name of the "actors" table
+// 1. Name of the "hosts" table
+// 2. Name of the "hosts_actor_types" table
+// 3. Name of the "actors" table
 //
 // Inspired by: https://stackoverflow.com/a/72033548/192024
 const lookupActorQuery = `WITH new_row AS (
-  INSERT INTO %[2]s (actor_type, actor_id, host_id, host_app_id, host_address, actor_idle_timeout, actor_activation)
-    SELECT $1, $2, %[1]s.host_id, %[2]s.host_app_id, %[2]s.host_address, %[1]s.actor_idle_timeout, CURRENT_TIMESTAMP
-      FROM %[1]s, %[2]s
+  INSERT INTO %[3]s (actor_type, actor_id, host_id, actor_idle_timeout, actor_activation)
+    SELECT $1, $2, %[2]s.host_id, %[2]s.actor_idle_timeout, CURRENT_TIMESTAMP
+      FROM %[2]s, %[1]s
       WHERE
-        %[1]s.actor_type = $1 AND
-        %[2]s.host_id = %[1]s.host_id AND
-        NOT EXISTS (
-          SELECT * FROM %[2]s WHERE actor_type = $1 AND actor_id = $2
+        %[2]s.actor_type = $1
+        AND %[1]s.host_id = %[2]s.host_id
+        AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+        AND NOT EXISTS (
+          SELECT %[3]s.host_id
+            FROM %[3]s, %[1]s
+            WHERE
+              %[3]s.actor_type = $1
+              AND %[3]s.actor_id = $2
+              AND %[3]s.host_id = %[1]s.host_id
+              AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
         )
       ORDER BY random() LIMIT 1
-    RETURNING host_app_id, host_address, actor_idle_timeout
+    ON CONFLICT (actor_type, actor_id) DO UPDATE
+      SET
+        host_id = EXCLUDED.host_id, actor_idle_timeout = EXCLUDED.actor_idle_timeout, actor_activation = EXCLUDED.actor_activation
+    RETURNING host_id, actor_idle_timeout
 )
 (
-  SELECT host_app_id, host_address, actor_idle_timeout
-    FROM %[2]s
-    WHERE actor_type = $1 AND actor_id = $2
+  SELECT %[1]s.host_app_id, %[1]s.host_address, %[3]s.actor_idle_timeout
+    FROM %[3]s, %[1]s
+    WHERE
+      %[3]s.actor_type = $1
+      AND %[3]s.actor_id = $2
+      AND %[3]s.host_id = %[1]s.host_id
+      AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
   UNION ALL
-  SELECT * FROM new_row
+  SELECT %[1]s.host_app_id, %[1]s.host_address, new_row.actor_idle_timeout
+    FROM new_row, %[1]s
+    WHERE
+      new_row.host_id = %[1]s.host_id
+      AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
 ) LIMIT 1;`
