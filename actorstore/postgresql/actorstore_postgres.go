@@ -331,7 +331,6 @@ func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef) (
 	}
 
 	var (
-		hostsTable           = p.metadata.TableName(pgTableHosts)
 		hostsActorTypesTable = p.metadata.TableName(pgTableHostsActorTypes)
 		actorsTable          = p.metadata.TableName(pgTableActors)
 	)
@@ -343,7 +342,7 @@ func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef) (
 		defer queryCancel()
 
 		err = p.db.QueryRow(queryCtx,
-			fmt.Sprintf(lookupActorQuery, hostsTable, hostsActorTypesTable, actorsTable),
+			fmt.Sprintf(lookupActorQuery, hostsActorTypesTable, actorsTable),
 			ref.ActorType, ref.ActorID,
 		).Scan(&res.AppID, &res.Address, &res.IdleTimeout)
 

@@ -24,7 +24,7 @@ const migration1Query = `CREATE TABLE %[1]s (
   host_address text NOT NULL,
   host_app_id text NOT NULL,
   host_actors_api_level integer NOT NULL,
-  host_last_healthcheck timestamp NOT NULL
+  host_last_healthcheck timestamp with time zone NOT NULL
 );
 
 CREATE UNIQUE INDEX ON %[1]s (host_address);
@@ -47,7 +47,7 @@ CREATE TABLE %[3]s (
   host_app_id text NOT NULL,
   host_address text NOT NULL,
   actor_idle_timeout integer NOT NULL,
-  actor_activation timestamp NOT NULL,
+  actor_activation timestamp with time zone NOT NULL,
   PRIMARY KEY (actor_type, actor_id),
   FOREIGN KEY (host_id) REFERENCES %[1]s (host_id) ON DELETE CASCADE
 );`
@@ -62,27 +62,26 @@ CREATE TABLE %[3]s (
 // 2. Actor ID
 //
 // fmt.Sprintf arguments:
-// 1. Name of the "hosts" table
-// 2. Name of the "hosts_actor_types" table
-// 3. Name of the "actors" table
+// 1. Name of the "hosts_actor_types" table
+// 2. Name of the "actors" table
 //
 // Inspired by: https://stackoverflow.com/a/72033548/192024
 const lookupActorQuery = `WITH new_row AS (
-  INSERT INTO %[3]s (actor_type, actor_id, host_id, host_app_id, host_address, actor_idle_timeout, actor_activation)
-    SELECT $1, $2, %[2]s.host_id, %[3]s.host_app_id, %[3]s.host_address, %[2]s.actor_idle_timeout, CURRENT_TIMESTAMP
-      FROM %[2]s, %[3]s
+  INSERT INTO %[2]s (actor_type, actor_id, host_id, host_app_id, host_address, actor_idle_timeout, actor_activation)
+    SELECT $1, $2, %[1]s.host_id, %[2]s.host_app_id, %[2]s.host_address, %[1]s.actor_idle_timeout, CURRENT_TIMESTAMP
+      FROM %[1]s, %[2]s
       WHERE
-        %[2]s.actor_type = $1 AND
-        %[3]s.host_id = %[2]s.host_id AND
+        %[1]s.actor_type = $1 AND
+        %[2]s.host_id = %[1]s.host_id AND
         NOT EXISTS (
-          SELECT * FROM %[3]s WHERE actor_type = $1 AND actor_id = $2
+          SELECT * FROM %[2]s WHERE actor_type = $1 AND actor_id = $2
         )
       ORDER BY random() LIMIT 1
     RETURNING host_app_id, host_address, actor_idle_timeout
 )
 (
   SELECT host_app_id, host_address, actor_idle_timeout
-    FROM %[3]s
+    FROM %[2]s
     WHERE actor_type = $1 AND actor_id = $2
   UNION ALL
   SELECT * FROM new_row
