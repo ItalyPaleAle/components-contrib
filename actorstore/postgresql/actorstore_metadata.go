@@ -33,6 +33,8 @@ const (
 type pgMetadata struct {
 	pgauth.PostgresAuthMetadata `mapstructure:",squash"`
 
+	Config actorstore.ActorsConfiguration `mapstructure:"-"`
+
 	TablePrefix       string        `mapstructure:"tablePrefix"`       // Could be in the format "schema.prefix" or just "prefix". Default: empty
 	MetadataTableName string        `mapstructure:"metadataTableName"` // Could be in the format "schema.table" or just "table". Default: "dapr_metadata" (same as state store)
 	Timeout           time.Duration `mapstructure:"timeout"`           // Default: 20s
@@ -44,6 +46,9 @@ func (m *pgMetadata) InitWithMetadata(meta actorstore.Metadata) error {
 	m.TablePrefix = ""
 	m.MetadataTableName = "dapr_metadata"
 	m.Timeout = 20 * time.Second
+
+	// Copy the configuration
+	m.Config = meta.Configuration
 
 	// Decode the metadata
 	err := metadata.DecodeMetadata(meta.Properties, &m)

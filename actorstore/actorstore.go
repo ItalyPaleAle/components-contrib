@@ -72,6 +72,14 @@ type Store interface {
 // Metadata contains a specific set of metadata properties for actorstate components.
 type Metadata struct {
 	metadata.Base `json:",inline"`
+
+	Configuration ActorsConfiguration
+}
+
+// ActorsConfiguration contains the configuration for the actor subsystem.
+type ActorsConfiguration struct {
+	// Interval to perform health checks for hosts.
+	HostHealthCheckInterval time.Duration
 }
 
 // AddActorHostRequest is the request object for the AddActorHost method.

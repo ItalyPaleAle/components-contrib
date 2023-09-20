@@ -157,20 +157,41 @@ func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.Add
 			hostsActorTypesTable = p.metadata.TableName(pgTableHostsActorTypes)
 		)
 
-		// First, add the actor host
+		// The hosts table has a unique constraint on host_address
+		// To start, we need to delete from the hosts table records which have the same host_address if one of:
+		// - The last health check is before the configured amount (i.e. the host is down)
+		// - The host_app_id is also the same, which indicates that the app has just been restarted
+		// We need to actually delete the row if it exists and matches the criteria above, and can't just perform a "REPLACE" query (i.e. "ON CONFLICT DO UPDATE") because that doesn't cause records in other tables that reference this one (most notably, "actors") to be deleted automatically. We also want to make sure the host_id changes.
 		queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 		defer queryCancel()
-		query := fmt.Sprintf(
-			`INSERT INTO %s
-				(host_address, host_app_id, host_actors_api_level, host_last_healthcheck)
-			VALUES
-				($1, $2, $3, CURRENT_TIMESTAMP)
-			RETURNING host_id`,
-			hostsTable,
+		_, err = tx.Exec(queryCtx,
+			fmt.Sprintf(
+				`DELETE FROM %s WHERE
+					(host_address = $1 AND host_app_id = $2)
+        			OR host_last_healthcheck < CURRENT_TIMESTAMP - $3::interval`,
+				hostsTable,
+			),
+			properties.Address, properties.AppID, p.metadata.Config.HostHealthCheckInterval,
 		)
-		err = tx.
-			QueryRow(queryCtx, query, properties.Address, properties.AppID, properties.ApiLevel).
-			Scan(&hostID)
+		if err != nil {
+			return "", fmt.Errorf("failed to remove conflicting hosts: %w", err)
+		}
+
+		// We're ready to add the actor host
+		// This is also when we detect if we have a conflict on the host_address column's unique index
+		queryCtx, queryCancel = context.WithTimeout(ctx, p.metadata.Timeout)
+		defer queryCancel()
+		err = tx.QueryRow(queryCtx,
+			fmt.Sprintf(
+				`INSERT INTO %s
+					(host_address, host_app_id, host_actors_api_level, host_last_healthcheck)
+				VALUES
+					($1, $2, $3, CURRENT_TIMESTAMP)
+				RETURNING host_id`,
+				hostsTable,
+			),
+			properties.Address, properties.AppID, properties.ApiLevel,
+		).Scan(&hostID)
 		if err != nil {
 			if isUniqueViolationError(err) {
 				return "", actorstore.ErrActorHostConflict
