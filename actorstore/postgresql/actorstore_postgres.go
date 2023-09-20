@@ -88,6 +88,8 @@ func (p *PostgreSQL) Init(ctx context.Context, md actorstore.Metadata) error {
 		return err
 	}
 
+	p.logger.Info("Established connection to PostgreSQL")
+
 	return nil
 }
 
@@ -136,8 +138,9 @@ func (p *PostgreSQL) Close() (err error) {
 		return nil
 	}
 
+	p.logger.Debug("Closing connection")
 	if p.db != nil {
-		err = p.Close()
+		p.db.Close()
 	}
 	return err
 }
