@@ -106,7 +106,7 @@ type AddActorHostRequest struct {
 	// List of supported actor types
 	ActorTypes []ActorHostType
 	// Version of the Actor APIs supported by the Dapr runtime
-	ApiLevel uint32
+	APILevel uint32
 }
 
 // UpdateActorHostRequest is the request object for the UpdateActorHost method.

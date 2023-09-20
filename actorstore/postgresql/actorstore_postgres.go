@@ -146,7 +146,7 @@ func (p *PostgreSQL) Close() (err error) {
 }
 
 func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.AddActorHostRequest) (string, error) {
-	if properties.AppID == "" || properties.Address == "" || properties.ApiLevel <= 0 {
+	if properties.AppID == "" || properties.Address == "" || properties.APILevel <= 0 {
 		return "", actorstore.ErrInvalidRequestMissingParameters
 	}
 
@@ -190,7 +190,7 @@ func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.Add
 				RETURNING host_id`,
 				hostsTable,
 			),
-			properties.Address, properties.AppID, properties.ApiLevel,
+			properties.Address, properties.AppID, properties.APILevel,
 		).Scan(&hostID)
 		if err != nil {
 			if isUniqueViolationError(err) {
