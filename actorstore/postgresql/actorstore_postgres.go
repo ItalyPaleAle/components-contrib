@@ -171,7 +171,7 @@ func (p *PostgreSQL) AddActorHost(ctx context.Context, properties actorstore.Add
         			OR host_last_healthcheck < CURRENT_TIMESTAMP - $3::interval`,
 				hostsTable,
 			),
-			properties.Address, properties.AppID, p.metadata.Config.HostHealthCheckInterval,
+			properties.Address, properties.AppID, p.metadata.Config.FailedInterval(),
 		)
 		if err != nil {
 			return "", fmt.Errorf("failed to remove conflicting hosts: %w", err)

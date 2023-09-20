@@ -16,6 +16,7 @@ package actorstore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -80,6 +81,25 @@ type Metadata struct {
 type ActorsConfiguration struct {
 	// Interval to perform health checks for hosts.
 	HostHealthCheckInterval time.Duration
+	// Timeout for actor host health checks.
+	HostHealthCheckTimeout time.Duration
+	// Number of consecutive health check failures after which an actor host is considered unhealthy.
+	HostHealthCheckThreshold int
+}
+
+// String implements fmt.Stringer and is used for debugging.
+func (c ActorsConfiguration) String() string {
+	return fmt.Sprintf(
+		"healthchecks=[interval='%v' timeout='%v' threshold='%v']",
+		c.HostHealthCheckInterval,
+		c.HostHealthCheckTimeout,
+		c.HostHealthCheckThreshold,
+	)
+}
+
+// FailedInterval returns the interval that can be used to detect if an actor host is unhealthy.
+func (c ActorsConfiguration) FailedInterval() time.Duration {
+	return (c.HostHealthCheckInterval * time.Duration(c.HostHealthCheckThreshold)) + c.HostHealthCheckTimeout
 }
 
 // AddActorHostRequest is the request object for the AddActorHost method.
