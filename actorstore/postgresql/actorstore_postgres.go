@@ -252,7 +252,7 @@ func (p *PostgreSQL) UpdateActorHost(ctx context.Context, actorHostID string, pr
 	// Note that:
 	// ActorTypes==nil -> Do not update actor types
 	// ActorTypes==slice with 0 elements -> Remove all actor types
-	if actorHostID == "" || (properties.LastHealthCheck == nil && properties.ActorTypes == nil) {
+	if actorHostID == "" || (!properties.UpdateLastHealthCheck && properties.ActorTypes == nil) {
 		return actorstore.ErrInvalidRequestMissingParameters
 	}
 
@@ -264,12 +264,12 @@ func (p *PostgreSQL) UpdateActorHost(ctx context.Context, actorHostID string, pr
 	// Let's avoid creating a transaction if we are not updating actor types (which involve updating 2 tables)
 	// This saves at least 2 round-trips to the database and improves locking
 	if properties.ActorTypes == nil {
-		err = updateHostsTable(ctx, p.db, actorHostID, properties, hostsTable, p.metadata.Timeout)
+		err = updateHostsTable(ctx, p.db, actorHostID, properties, hostsTable, p.metadata.Config.FailedInterval(), p.metadata.Timeout)
 	} else {
 		// Because we need to update 2 tables, we need a transaction
 		_, err = executeInTransaction(ctx, p.logger, p.db, p.metadata.Timeout, func(ctx context.Context, tx pgx.Tx) (z struct{}, zErr error) {
 			// Update all hosts properties, besides the list of supported actor types
-			zErr = updateHostsTable(ctx, tx, actorHostID, properties, hostsTable, p.metadata.Timeout)
+			zErr = updateHostsTable(ctx, tx, actorHostID, properties, hostsTable, p.metadata.Config.FailedInterval(), p.metadata.Timeout)
 			if zErr != nil {
 				return z, zErr
 			}
@@ -304,17 +304,23 @@ func (p *PostgreSQL) UpdateActorHost(ctx context.Context, actorHostID string, pr
 
 // Updates the hosts table with the given properties.
 // Does not update ActorTypes which impacts a separate table.
-func updateHostsTable(ctx context.Context, db pginterfaces.DBQuerier, actorHostID string, properties actorstore.UpdateActorHostRequest, hostsTable string, timeout time.Duration) error {
-	// For now, LastHealthCheck is the only property that can be updated in the hosts table
-	if properties.LastHealthCheck == nil {
+func updateHostsTable(ctx context.Context, db pginterfaces.DBQuerier, actorHostID string, properties actorstore.UpdateActorHostRequest, hostsTable string, failedInterval time.Duration, timeout time.Duration) error {
+	// For now, host_last_healthcheck is the only property that can be updated in the hosts table
+	if properties.UpdateLastHealthCheck {
 		return nil
 	}
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, timeout)
 	defer queryCancel()
 	res, err := db.Exec(queryCtx,
-		fmt.Sprintf("UPDATE %s SET host_last_healthcheck = $2 WHERE host_id = $1", hostsTable),
-		actorHostID, *properties.LastHealthCheck,
+		fmt.Sprintf(`UPDATE %s
+			SET
+				host_last_healthcheck = CURRENT_TIMESTAMP
+			WHERE
+				host_id = $1 AND
+				host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+			`, hostsTable),
+		actorHostID, failedInterval,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update actor host: %w", err)

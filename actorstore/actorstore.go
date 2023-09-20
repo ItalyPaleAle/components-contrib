@@ -79,27 +79,21 @@ type Metadata struct {
 
 // ActorsConfiguration contains the configuration for the actor subsystem.
 type ActorsConfiguration struct {
-	// Interval to perform health checks for hosts.
+	// Maximum interval between pings received from an actor host.
 	HostHealthCheckInterval time.Duration
-	// Timeout for actor host health checks.
-	HostHealthCheckTimeout time.Duration
-	// Number of consecutive health check failures after which an actor host is considered unhealthy.
-	HostHealthCheckThreshold int
 }
 
 // String implements fmt.Stringer and is used for debugging.
 func (c ActorsConfiguration) String() string {
 	return fmt.Sprintf(
-		"healthchecks=[interval='%v' timeout='%v' threshold='%v']",
+		"host-healthcheck-interval='%v'",
 		c.HostHealthCheckInterval,
-		c.HostHealthCheckTimeout,
-		c.HostHealthCheckThreshold,
 	)
 }
 
 // FailedInterval returns the interval that can be used to detect if an actor host is unhealthy.
 func (c ActorsConfiguration) FailedInterval() time.Duration {
-	return (c.HostHealthCheckInterval * time.Duration(c.HostHealthCheckThreshold)) + c.HostHealthCheckTimeout
+	return c.HostHealthCheckInterval
 }
 
 // AddActorHostRequest is the request object for the AddActorHost method.
@@ -117,9 +111,9 @@ type AddActorHostRequest struct {
 
 // UpdateActorHostRequest is the request object for the UpdateActorHost method.
 type UpdateActorHostRequest struct {
-	// Last healthcheck time
-	// If non-nil, will update the value in the database
-	LastHealthCheck *time.Time
+	// Updates last healthcheck time
+	// If true, will update the value in the database with the current time (using the server's clock)
+	UpdateLastHealthCheck bool
 
 	// List of supported actor types
 	// If non-nil, will replace all existing, registered actor types
