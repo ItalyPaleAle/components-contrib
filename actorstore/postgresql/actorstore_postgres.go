@@ -371,8 +371,8 @@ func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef) (
 
 		err = p.db.QueryRow(queryCtx,
 			fmt.Sprintf(lookupActorQuery, hostsTable, hostsActorTypesTable, actorsTable),
-			ref.ActorType, ref.ActorID,
-		).Scan(&res.AppID, &res.Address, &res.IdleTimeout, p.metadata.Config.FailedInterval())
+			ref.ActorType, ref.ActorID, p.metadata.Config.FailedInterval(),
+		).Scan(&res.AppID, &res.Address, &res.IdleTimeout)
 
 		if err == nil {
 			break

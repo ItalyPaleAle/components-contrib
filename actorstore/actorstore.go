@@ -32,7 +32,7 @@ var (
 	ErrActorHostNotFound = errors.New("actor host not found")
 
 	// ErrNoActorHost is returned by LookupActor when there's no suitable host for actors of the given type.
-	ErrNoActorHost = errors.New("could not find a suitable host for actor of the given type")
+	ErrNoActorHost = errors.New("could not find a suitable host for actors of the given type")
 
 	// ErrActorNotFound is returned by RemoveActor when the actor doesn't exist.
 	ErrActorNotFound = errors.New("actor not found")
