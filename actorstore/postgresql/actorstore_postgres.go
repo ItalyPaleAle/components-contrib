@@ -306,7 +306,7 @@ func (p *PostgreSQL) UpdateActorHost(ctx context.Context, actorHostID string, pr
 // Does not update ActorTypes which impacts a separate table.
 func updateHostsTable(ctx context.Context, db pginterfaces.DBQuerier, actorHostID string, properties actorstore.UpdateActorHostRequest, hostsTable string, failedInterval time.Duration, timeout time.Duration) error {
 	// For now, host_last_healthcheck is the only property that can be updated in the hosts table
-	if properties.UpdateLastHealthCheck {
+	if !properties.UpdateLastHealthCheck {
 		return nil
 	}
 
@@ -318,7 +318,7 @@ func updateHostsTable(ctx context.Context, db pginterfaces.DBQuerier, actorHostI
 				host_last_healthcheck = CURRENT_TIMESTAMP
 			WHERE
 				host_id = $1 AND
-				host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+				host_last_healthcheck >= CURRENT_TIMESTAMP - $2::interval
 			`, hostsTable),
 		actorHostID, failedInterval,
 	)
