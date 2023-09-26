@@ -50,6 +50,23 @@ CREATE TABLE %[3]s (
   FOREIGN KEY (host_id) REFERENCES %[1]s (host_id) ON DELETE CASCADE
 );`
 
+// Query for performing migration #2
+//
+// fmt.Sprintf arguments:
+// 1. Name of the "reminders" table
+const migration2Query = `CREATE TABLE %[1]s (
+  reminder_target text PRIMARY KEY NOT NULL,
+  reminder_execution_time timestamp with time zone NOT NULL,
+  reminder_period interval,
+  reminder_ttl timestamp,
+  reminder_data bytea,
+  reminder_lease_time timestamp with time zone
+);
+
+CREATE INDEX ON %[1]s (reminder_execution_time);
+CREATE INDEX ON %[1]s (reminder_lease_time);
+`
+
 // Query for looking up an actor, or creating it ex novo.
 //
 // The purpose of this query is to perform an atomic "load or set". Given an actor ID and type, it will:

@@ -28,6 +28,7 @@ const (
 	pgTableHosts           pgTable = "hosts"
 	pgTableHostsActorTypes pgTable = "hosts_actor_types"
 	pgTableActors          pgTable = "actors"
+	pgTableReminders       pgTable = "reminders"
 )
 
 type pgMetadata struct {
