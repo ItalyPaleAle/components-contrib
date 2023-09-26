@@ -55,7 +55,7 @@ CREATE TABLE %[3]s (
 // fmt.Sprintf arguments:
 // 1. Name of the "reminders" table
 const migration2Query = `CREATE TABLE %[1]s (
-  reminder_target text PRIMARY KEY NOT NULL,
+  reminder_reference text PRIMARY KEY NOT NULL,
   reminder_execution_time timestamp with time zone NOT NULL,
   reminder_period interval,
   reminder_ttl timestamp,

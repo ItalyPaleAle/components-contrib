@@ -29,6 +29,7 @@ type Store interface {
 	health.Pinger
 
 	StoreActorState
+	StoreReminders
 
 	// Init the actor store.
 	Init(ctx context.Context, md Metadata) error

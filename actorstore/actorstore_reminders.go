@@ -46,6 +46,16 @@ type ReminderRef struct {
 	Name string
 }
 
+// IsValid returns true if all required fields are present.
+func (r ReminderRef) IsValid() bool {
+	return r.ActorType != "" && r.ActorID != "" && r.Name != ""
+}
+
+// GetReference returns the reference of the reminder, which is "actor-type||actor-id||reminder-name".
+func (r ReminderRef) GetReference() string {
+	return r.ActorType + "||" + r.ActorID + "||" + r.Name
+}
+
 // ReminderOptions contains the options for a reminder.
 type ReminderOptions struct {
 	// Scheduled execution time.
@@ -58,6 +68,11 @@ type ReminderOptions struct {
 	Data []byte
 }
 
+// IsValid returns true if all required fields are present.
+func (r ReminderOptions) IsValid() bool {
+	return !r.ExecutionTime.IsZero()
+}
+
 // GetReminderResponse is the response from GetReminder.
 type GetReminderResponse struct {
 	ReminderOptions
@@ -67,4 +82,9 @@ type GetReminderResponse struct {
 type CreateReminderRequest struct {
 	ReminderRef
 	ReminderOptions
+}
+
+// IsValid returns true if all required fields are present.
+func (r CreateReminderRequest) IsValid() bool {
+	return r.ReminderRef.IsValid() && r.ReminderOptions.IsValid()
 }
