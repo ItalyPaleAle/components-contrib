@@ -52,6 +52,11 @@ CREATE TABLE %[3]s (
 
 // Query for looking up an actor, or creating it ex novo.
 //
+// The purpose of this query is to perform an atomic "load or set". Given an actor ID and type, it will:
+// - If there's already a row in the table with the same actor ID and type, AND the last healthcheck hasn't expired, returns the row
+// - If there's no row in the table with the same actor ID and type, OR if there's a row but the last healthcheck has expired, inserts a new row (performing an "upsert" if the row already exists)
+// In both cases, the query lookups up the actor host's ID, and then returns the actor host's address and app ID, and the idle timeout configured for the actor type
+//
 // Note that in case of 2 requests at the same time when the row doesn't exist, this may fail with a race condition.
 // You will get a unique constraint violation. The query can be retried in that case.
 //
