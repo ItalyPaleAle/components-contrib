@@ -29,9 +29,10 @@ func (p *PostgreSQL) GetReminder(ctx context.Context, req actorstore.ReminderRef
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
+	q := fmt.Sprintf(`SELECT reminder_execution_time, reminder_period, reminder_ttl, reminder_data
+		FROM %s WHERE actor_type = $1 AND actor_id = $2 AND reminder_name = $3`, p.metadata.TableName(pgTableReminders))
 	err = p.db.
-		QueryRow(queryCtx, fmt.Sprintf(`SELECT reminder_execution_time, reminder_period, reminder_ttl, reminder_data
-		FROM %s WHERE reminder_reference = $1`, p.metadata.TableName(pgTableReminders)), req.GetReference()).
+		QueryRow(queryCtx, q, req.ActorType, req.ActorID, req.Name).
 		Scan(&res.ExecutionTime, &res.Period, &res.TTL, &res.Data)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -50,14 +51,14 @@ func (p *PostgreSQL) CreateReminder(ctx context.Context, req actorstore.CreateRe
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
 	q := fmt.Sprintf(`INSERT INTO %s
-			(reminder_reference, reminder_execution_time, reminder_period, reminder_ttl, reminder_data)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (reminder_reference) DO UPDATE SET
+			(actor_type, actor_id, reminder_name, reminder_execution_time, reminder_period, reminder_ttl, reminder_data)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (actor_type, actor_id, reminder_name) DO UPDATE SET
 			reminder_execution_time = EXCLUDED.reminder_execution_time,
 			reminder_period = EXCLUDED.reminder_period,
 			reminder_ttl = EXCLUDED.reminder_ttl,
 			reminder_data = EXCLUDED.reminder_data`, p.metadata.TableName(pgTableReminders))
-	_, err := p.db.Exec(queryCtx, q, req.GetReference(), req.ExecutionTime, req.Period, req.TTL, req.Data)
+	_, err := p.db.Exec(queryCtx, q, req.ActorType, req.ActorID, req.Name, req.ExecutionTime, req.Period, req.TTL, req.Data)
 	if err != nil {
 		return fmt.Errorf("failed to create reminder: %w", err)
 	}
@@ -71,7 +72,10 @@ func (p *PostgreSQL) DeleteReminder(ctx context.Context, req actorstore.Reminder
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
-	_, err := p.db.Exec(queryCtx, fmt.Sprintf(`DELETE FROM %s WHERE reminder_reference = $1`, p.metadata.TableName(pgTableReminders)), req.GetReference())
+	_, err := p.db.Exec(queryCtx,
+		fmt.Sprintf(`DELETE FROM %s WHERE actor_type = $1 AND actor_id = $2 AND reminder_name = $3`, p.metadata.TableName(pgTableReminders)),
+		req.ActorType, req.ActorID, req.Name,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return actorstore.ErrReminderNotFound

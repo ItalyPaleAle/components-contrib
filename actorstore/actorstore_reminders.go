@@ -51,11 +51,6 @@ func (r ReminderRef) IsValid() bool {
 	return r.ActorType != "" && r.ActorID != "" && r.Name != ""
 }
 
-// GetReference returns the reference of the reminder, which is "actor-type||actor-id||reminder-name".
-func (r ReminderRef) GetReference() string {
-	return r.ActorType + "||" + r.ActorID + "||" + r.Name
-}
-
 // ReminderOptions contains the options for a reminder.
 type ReminderOptions struct {
 	// Scheduled execution time.
