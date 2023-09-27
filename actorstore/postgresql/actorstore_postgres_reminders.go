@@ -99,6 +99,11 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 	var err error
 	cfg := p.metadata.Config
 
+	// If there's no host or supported actor types, that means there's nothing to return
+	if len(req.Hosts) == 0 && len(req.ActorTypes) == 0 {
+		return nil, nil
+	}
+
 	// Allocate with enough capacity for the max batch size
 	res := make([]actorstore.FetchedReminder, 0, cfg.RemindersFetchAheadBatchSize)
 
@@ -107,7 +112,7 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 
 	rows, _ := p.db.Query(queryCtx,
 		fmt.Sprintf(remindersFetchQuery, p.metadata.TableName(pgTableReminders), p.metadata.TableName(pgTableActors)),
-		cfg.RemindersFetchAheadInterval, cfg.RemindersLeaseDuration, req.Hosts, cfg.RemindersFetchAheadBatchSize,
+		cfg.RemindersFetchAheadInterval, cfg.RemindersLeaseDuration, req.ActorTypes, req.Hosts, cfg.RemindersFetchAheadBatchSize,
 	)
 	defer rows.Close()
 

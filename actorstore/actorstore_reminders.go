@@ -91,6 +91,8 @@ func (r CreateReminderRequest) IsValid() bool {
 type FetchNextRemindersRequest struct {
 	// List of hosts with active connections to this actor service instance.
 	Hosts []string
+	// List of actor types supported by hosts with active connections to this instance of the actor service.
+	ActorTypes []string
 }
 
 // FetchedReminder is the type for the reminders returned by FetchNextReminders.

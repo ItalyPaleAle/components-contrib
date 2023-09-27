@@ -136,13 +136,16 @@ const lookupActorQuery = `WITH new_row AS (
 //
 // This query retrieves a batch of upcoming reminders, and at the same time it updates the retrieved rows to "lock" them.
 // Reminders are retrieved if they are to be executed within the next "fetch ahead" interval and if they don't already have a lease.
-// This only fetches reminders for actors that are either not active on any host, or active on the list of hosts that have a connection with the current instance of the actors service.
+// This only fetches reminders for actors that are either one of:
+// - Active on hosts that have a connection with the current instance of the actors service (argument $4)
+// - Not active on any host, but whose type can be served by an actor host connected to the current instance of the actors service (argument $3)
 //
 // Query arguments:
 // 1. Fetch ahead interval, as a `time.Duration`
 // 2. Lease duration, as a `time.Duration`
-// 3. IDs of actor hosts that have an active connection to the current instance of the actors service, as a `string[]`
-// 4. Maximum batch size, as `int`
+// 3. Actor types that can be served by hosts connected to the current instance of the actors service, as a `string[]`
+// 4. IDs of actor hosts that have an active connection to the current instance of the actors service, as a `string[]`
+// 5. Maximum batch size, as `int`
 //
 // fmt.Sprintf arguments:
 // 1. Name of the "reminders" table
@@ -161,11 +164,14 @@ WHERE reminder_id IN (
             OR %[1]s.reminder_lease_time < CURRENT_TIMESTAMP - $2::interval
         )
         AND (
-            %[2]s.host_id IS NULL
-            OR %[2]s.host_id = ANY($3)
+            (
+                %[2]s.host_id IS NULL
+                AND %[1]s.actor_type = ANY($3)
+            )
+            OR %[2]s.host_id = ANY($4)
         )
     ORDER BY %[1]s.reminder_execution_time ASC
-    LIMIT $4
+    LIMIT $5
 )
 RETURNING
     actor_type, actor_id, reminder_name,
