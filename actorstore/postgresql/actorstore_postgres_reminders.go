@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/dapr/components-contrib/actorstore"
 	"github.com/jackc/pgx/v5"
@@ -29,17 +30,23 @@ func (p *PostgreSQL) GetReminder(ctx context.Context, req actorstore.ReminderRef
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
-	q := fmt.Sprintf(`SELECT reminder_execution_time, reminder_period, reminder_ttl, reminder_data
+
+	q := fmt.Sprintf(`SELECT EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int, reminder_period, reminder_ttl, reminder_data
 		FROM %s WHERE actor_type = $1 AND actor_id = $2 AND reminder_name = $3`, p.metadata.TableName(pgTableReminders))
+	var delay int
 	err = p.db.
 		QueryRow(queryCtx, q, req.ActorType, req.ActorID, req.Name).
-		Scan(&res.ExecutionTime, &res.Period, &res.TTL, &res.Data)
+		Scan(&delay, &res.Period, &res.TTL, &res.Data)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return res, actorstore.ErrReminderNotFound
 		}
 		return res, fmt.Errorf("failed to retrieve reminder: %w", err)
 	}
+
+	// The query doesn't return an exact time, but rather the number of seconds from present, to make sure we always use the clock of the DB server and avoid clock skews
+	res.ExecutionTime = time.Now().Add(time.Duration(delay) * time.Second)
+
 	return res, nil
 }
 
@@ -48,17 +55,20 @@ func (p *PostgreSQL) CreateReminder(ctx context.Context, req actorstore.CreateRe
 		return actorstore.ErrInvalidRequestMissingParameters
 	}
 
+	// Do not store the exact time, but rather the delay from now, to use the DB server's clock
+	executionTime := time.Until(req.ExecutionTime)
+
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
 	q := fmt.Sprintf(`INSERT INTO %s
 			(actor_type, actor_id, reminder_name, reminder_execution_time, reminder_period, reminder_ttl, reminder_data)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		VALUES ($1, $2, $3, CURRENT_TIMESTAMP + $4::interval, $5, $6, $7)
 		ON CONFLICT (actor_type, actor_id, reminder_name) DO UPDATE SET
 			reminder_execution_time = EXCLUDED.reminder_execution_time,
 			reminder_period = EXCLUDED.reminder_period,
 			reminder_ttl = EXCLUDED.reminder_ttl,
 			reminder_data = EXCLUDED.reminder_data`, p.metadata.TableName(pgTableReminders))
-	_, err := p.db.Exec(queryCtx, q, req.ActorType, req.ActorID, req.Name, req.ExecutionTime, req.Period, req.TTL, req.Data)
+	_, err := p.db.Exec(queryCtx, q, req.ActorType, req.ActorID, req.Name, executionTime, req.Period, req.TTL, req.Data)
 	if err != nil {
 		return fmt.Errorf("failed to create reminder: %w", err)
 	}
