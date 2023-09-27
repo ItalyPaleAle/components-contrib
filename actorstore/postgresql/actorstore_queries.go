@@ -57,7 +57,7 @@ CREATE TABLE %[3]s (
 const migration2Query = `CREATE TABLE %[1]s (
   reminder_reference text PRIMARY KEY NOT NULL,
   reminder_execution_time timestamp with time zone NOT NULL,
-  reminder_period interval,
+  reminder_period text,
   reminder_ttl timestamp,
   reminder_data bytea,
   reminder_lease_time timestamp with time zone

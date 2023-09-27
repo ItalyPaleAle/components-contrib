@@ -60,8 +60,8 @@ func (r ReminderRef) GetReference() string {
 type ReminderOptions struct {
 	// Scheduled execution time.
 	ExecutionTime time.Time
-	// Reminder repetition period (can be nil).
-	Period *time.Duration
+	// Reminder repetition period.
+	Period *string
 	// Deadline for repeating reminders (can be nil).
 	TTL *time.Time
 	// Data for the reminder (can be nil).
