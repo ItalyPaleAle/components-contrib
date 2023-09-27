@@ -34,6 +34,9 @@ type StoreReminders interface {
 	// DeleteReminder deletes an existing reminder before it fires.
 	// It erturns ErrReminderNotFound if it doesn't exist.
 	DeleteReminder(ctx context.Context, req ReminderRef) error
+
+	// FetchNextReminders retrieves the list of upcoming reminders, acquiring a lock on them.
+	FetchNextReminders(ctx context.Context, req FetchNextRemindersRequest) ([]FetchedReminder, error)
 }
 
 // ReminderRef is the reference to a reminder (reminder name, actor type and ID).
@@ -82,4 +85,18 @@ type CreateReminderRequest struct {
 // IsValid returns true if all required fields are present.
 func (r CreateReminderRequest) IsValid() bool {
 	return r.ReminderRef.IsValid() && r.ReminderOptions.IsValid()
+}
+
+// FetchNextRemindersRequest is the request for FetchNextReminders.
+type FetchNextRemindersRequest struct {
+	// List of hosts with active connections to this actor service instance.
+	Hosts []string
+}
+
+// FetchedReminder is the type for the reminders returned by FetchNextReminders.
+type FetchedReminder struct {
+	ReminderRef
+	ReminderOptions
+
+	Lease any
 }

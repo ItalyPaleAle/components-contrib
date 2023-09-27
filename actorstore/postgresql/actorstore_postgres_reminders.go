@@ -84,3 +84,46 @@ func (p *PostgreSQL) DeleteReminder(ctx context.Context, req actorstore.Reminder
 	}
 	return nil
 }
+
+func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.FetchNextRemindersRequest) ([]actorstore.FetchedReminder, error) {
+	var err error
+	cfg := p.metadata.Config
+
+	// Allocate with enough capacity for the max batch size
+	res := make([]actorstore.FetchedReminder, 0, cfg.RemindersFetchAheadBatchSize)
+
+	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	defer queryCancel()
+
+	rows, _ := p.db.Query(queryCtx,
+		fmt.Sprintf(remindersFetchQuery, p.metadata.TableName(pgTableReminders), p.metadata.TableName(pgTableActors)),
+		cfg.RemindersFetchAheadInterval, cfg.RemindersLeaseDuration, req.Hosts, cfg.RemindersFetchAheadBatchSize,
+	)
+	defer rows.Close()
+
+	now := time.Now()
+	for rows.Next() {
+		r := actorstore.FetchedReminder{}
+		var delay int
+		err = rows.Scan(&r.ActorType, &r.ActorID, &r.Name, &delay, &r.Data, &r.Lease)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch upcoming reminders: %w", err)
+		}
+
+		// The query doesn't return an exact time, but rather the number of seconds from present, to make sure we always use the clock of the DB server and avoid clock skews
+		r.ExecutionTime = now.Add(time.Duration(delay) * time.Second)
+
+		res = append(res, r)
+	}
+
+	err = rows.Err()
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, actorstore.ErrReminderNotFound
+		}
+
+		return nil, fmt.Errorf("failed to fetch upcoming reminders: %w", err)
+	}
+
+	return res, nil
+}

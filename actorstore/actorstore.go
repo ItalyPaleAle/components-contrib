@@ -39,6 +39,9 @@ type Store interface {
 type Metadata struct {
 	metadata.Base `json:",inline"`
 
+	// Process ID
+	PID string
+	// Configuration for actors
 	Configuration ActorsConfiguration
 }
 
@@ -46,6 +49,15 @@ type Metadata struct {
 type ActorsConfiguration struct {
 	// Maximum interval between pings received from an actor host.
 	HostHealthCheckInterval time.Duration
+
+	// Interval to pre-fetch reminders in the future.
+	RemindersFetchAheadInterval time.Duration
+
+	// Lease duration for reminders.
+	RemindersLeaseDuration time.Duration
+
+	// Batch size for retrieving reminders
+	RemindersFetchAheadBatchSize int
 }
 
 // String implements fmt.Stringer and is used for debugging.

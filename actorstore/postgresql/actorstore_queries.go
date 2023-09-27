@@ -55,6 +55,7 @@ CREATE TABLE %[3]s (
 // fmt.Sprintf arguments:
 // 1. Name of the "reminders" table
 const migration2Query = `CREATE TABLE %[1]s (
+  reminder_id uuid PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(), 
   actor_type text NOT NULL,
   actor_id text NOT NULL,
   reminder_name text NOT NULL,
@@ -63,9 +64,10 @@ const migration2Query = `CREATE TABLE %[1]s (
   reminder_ttl timestamp,
   reminder_data bytea,
   reminder_lease_time timestamp with time zone,
-  PRIMARY KEY (actor_type, actor_id, reminder_name)
+  reminder_lease_pid text
 );
 
+CREATE UNIQUE INDEX ON %[1]s (actor_type, actor_id, reminder_name);
 CREATE INDEX ON %[1]s (reminder_execution_time);
 CREATE INDEX ON %[1]s (reminder_lease_time);
 `
@@ -81,9 +83,9 @@ CREATE INDEX ON %[1]s (reminder_lease_time);
 // You will get a unique constraint violation. The query can be retried in that case.
 //
 // Query arguments:
-// 1. Actor type
-// 2. Actor ID
-// 3. Health check interval
+// 1. Actor type, as `string`
+// 2. Actor ID, as `string`
+// 3. Health check interval, as `time.Duration`
 //
 // fmt.Sprintf arguments:
 // 1. Name of the "hosts" table
@@ -129,3 +131,43 @@ const lookupActorQuery = `WITH new_row AS (
       new_row.host_id = %[1]s.host_id
       AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
 ) LIMIT 1;`
+
+// Query for fetching the upcoming reminders.
+//
+// This query retrieves a batch of upcoming reminders, and at the same time it updates the retrieved rows to "lock" them.
+// Reminders are retrieved if they are to be executed within the next "fetch ahead" interval and if they don't already have a lease.
+// This only fetches reminders for actors that are either not active on any host, or active on the list of hosts that have a connection with the current instance of the actors service.
+//
+// Query arguments:
+// 1. Fetch ahead interval, as a `time.Duration`
+// 2. Lease duration, as a `time.Duration`
+// 3. IDs of actor hosts that have an active connection to the current instance of the actors service, as a `string[]`
+// 4. Maximum batch size, as `int`
+//
+// fmt.Sprintf arguments:
+// 1. Name of the "reminders" table
+// 2. Name of the "actors" table
+const remindersFetchQuery = `UPDATE %[1]s
+SET reminder_lease_time = CURRENT_TIMESTAMP
+WHERE reminder_id IN (
+    SELECT reminder_id
+    FROM %[1]s
+    LEFT JOIN %[2]s
+        ON %[2]s.actor_type = %[1]s.actor_type AND %[2]s.actor_id = %[1]s.actor_id
+    WHERE 
+        %[1]s.reminder_execution_time < CURRENT_TIMESTAMP + $1::interval
+        AND (
+            %[1]s.reminder_lease_time IS NULL
+            OR %[1]s.reminder_lease_time < CURRENT_TIMESTAMP - $2::interval
+        )
+        AND (
+            %[2]s.host_id IS NULL
+            OR %[2]s.host_id = ANY($3)
+        )
+    ORDER BY %[1]s.reminder_execution_time ASC
+    LIMIT $4
+)
+RETURNING
+    actor_type, actor_id, reminder_name,
+    EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
+    reminder_data, reminder_lease_time;`
