@@ -58,6 +58,8 @@ func (r ReminderRef) IsValid() bool {
 type ReminderOptions struct {
 	// Scheduled execution time.
 	ExecutionTime time.Time
+	// Delay from current time.
+	Delay time.Duration
 	// Reminder repetition period.
 	Period *string
 	// Deadline for repeating reminders (can be nil).
@@ -68,7 +70,9 @@ type ReminderOptions struct {
 
 // IsValid returns true if all required fields are present.
 func (r ReminderOptions) IsValid() bool {
-	return !r.ExecutionTime.IsZero()
+	// Nothing to validate at this time
+	// If ExecutionTime is zero, we'll take whatever the delay value is, even if zero.
+	return true
 }
 
 // GetReminderResponse is the response from GetReminder.

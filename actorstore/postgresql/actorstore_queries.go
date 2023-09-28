@@ -146,12 +146,15 @@ const lookupActorQuery = `WITH new_row AS (
 // 3. Actor types that can be served by hosts connected to the current instance of the actors service, as a `string[]`
 // 4. IDs of actor hosts that have an active connection to the current instance of the actors service, as a `string[]`
 // 5. Maximum batch size, as `int`
+// 6. Process ID
 //
 // fmt.Sprintf arguments:
 // 1. Name of the "reminders" table
 // 2. Name of the "actors" table
 const remindersFetchQuery = `UPDATE %[1]s
-SET reminder_lease_time = CURRENT_TIMESTAMP
+SET
+    reminder_lease_time = CURRENT_TIMESTAMP,
+    reminder_lease_pid = $6
 WHERE reminder_id IN (
     SELECT reminder_id
     FROM %[1]s

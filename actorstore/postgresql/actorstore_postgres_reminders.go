@@ -56,7 +56,13 @@ func (p *PostgreSQL) CreateReminder(ctx context.Context, req actorstore.CreateRe
 	}
 
 	// Do not store the exact time, but rather the delay from now, to use the DB server's clock
-	executionTime := time.Until(req.ExecutionTime)
+	var executionTime time.Duration
+	if !req.ExecutionTime.IsZero() {
+		executionTime = time.Until(req.ExecutionTime)
+	} else {
+		// Note that delay could be zero
+		executionTime = req.Delay
+	}
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
@@ -112,7 +118,9 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 
 	rows, _ := p.db.Query(queryCtx,
 		fmt.Sprintf(remindersFetchQuery, p.metadata.TableName(pgTableReminders), p.metadata.TableName(pgTableActors)),
-		cfg.RemindersFetchAheadInterval, cfg.RemindersLeaseDuration, req.ActorTypes, req.Hosts, cfg.RemindersFetchAheadBatchSize,
+		cfg.RemindersFetchAheadInterval, cfg.RemindersLeaseDuration,
+		req.ActorTypes, req.Hosts,
+		cfg.RemindersFetchAheadBatchSize, p.metadata.PID,
 	)
 	defer rows.Close()
 
