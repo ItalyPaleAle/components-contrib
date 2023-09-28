@@ -102,3 +102,13 @@ type FetchedReminder struct {
 
 	Lease any
 }
+
+// Key implements the queuable interface.
+func (r FetchedReminder) Key() string {
+	return r.ActorType + "||" + r.ActorID + "||" + r.Name
+}
+
+// ScheduledTime implements the queuable interface.
+func (r FetchedReminder) ScheduledTime() time.Time {
+	return r.ExecutionTime
+}
