@@ -117,12 +117,59 @@ const lookupActorQuery = `WITH new_row AS (
     RETURNING host_id, actor_idle_timeout
 )
 (
+  SELECT %[1]s.host_id, %[1]s.host_app_id, %[1]s.host_address, %[3]s.actor_idle_timeout
+    FROM %[3]s, %[1]s
+    WHERE
+      %[3]s.actor_type = $1
+      AND %[3]s.actor_id = $2
+      AND %[3]s.host_id = %[1]s.host_id
+      AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+  UNION ALL
+  SELECT %[1]s.host_id, %[1]s.host_app_id, %[1]s.host_address, new_row.actor_idle_timeout
+    FROM new_row, %[1]s
+    WHERE
+      new_row.host_id = %[1]s.host_id
+      AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+) LIMIT 1;`
+
+// Query for looking up an actor, or creating it ex novo, but limited to a set of host IDs.
+//
+// This is a variation of `lookupActorQuery` which restricts actors to be activated on a list of host IDs.
+//
+// Arguments are the same as for `lookupActorQuery`, but with an additional one:
+// 4. IDs of actor hosts on which the actor could be activated, as a `string[]`
+const lookupActorQueryWithHostRestriction = `WITH new_row AS (
+  INSERT INTO %[3]s (actor_type, actor_id, host_id, actor_idle_timeout, actor_activation)
+    SELECT $1, $2, %[2]s.host_id, %[2]s.actor_idle_timeout, CURRENT_TIMESTAMP
+      FROM %[2]s, %[1]s
+      WHERE
+        %[2]s.actor_type = $1
+        AND %[1]s.host_id = %[2]s.host_id
+        AND %[1]s.host_id = ANY($4)
+        AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+        AND NOT EXISTS (
+          SELECT %[3]s.host_id
+            FROM %[3]s, %[1]s
+            WHERE
+              %[3]s.actor_type = $1
+              AND %[3]s.actor_id = $2
+              AND %[3]s.host_id = %[1]s.host_id
+              AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
+        )
+      ORDER BY random() LIMIT 1
+    ON CONFLICT (actor_type, actor_id) DO UPDATE
+      SET
+        host_id = EXCLUDED.host_id, actor_idle_timeout = EXCLUDED.actor_idle_timeout, actor_activation = EXCLUDED.actor_activation
+    RETURNING host_id, actor_idle_timeout
+)
+(
   SELECT %[1]s.host_app_id, %[1]s.host_address, %[3]s.actor_idle_timeout
     FROM %[3]s, %[1]s
     WHERE
       %[3]s.actor_type = $1
       AND %[3]s.actor_id = $2
       AND %[3]s.host_id = %[1]s.host_id
+      AND %[1]s.host_id = ANY($4)
       AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
   UNION ALL
   SELECT %[1]s.host_app_id, %[1]s.host_address, new_row.actor_idle_timeout

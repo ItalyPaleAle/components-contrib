@@ -51,7 +51,7 @@ type StoreActorState interface {
 	// LookupActor returns the address of the actor host for a given actor type and ID.
 	// If the actor is not currently active on any host, it's created in the database and assigned to a random host.
 	// If it's not possible to find an instance capable of hosting the given actor, ErrNoActorHost is returned instead.
-	LookupActor(ctx context.Context, ref ActorRef) (LookupActorResponse, error)
+	LookupActor(ctx context.Context, ref ActorRef, opts LookupActorOpts) (LookupActorResponse, error)
 
 	// RemoveActor removes an actor from the list of active actors.
 	// If the actor doesn't exist, returns ErrActorNotFound.
@@ -96,8 +96,17 @@ type ActorRef struct {
 	ActorID   string
 }
 
+// LookupActorOpts contains options for LookupActor.
+type LookupActorOpts struct {
+	// List of hosts on which the actor can be activated.
+	// If the actor is active on a different host, ErrNoActorHost is returned.
+	Hosts []string
+}
+
 // LookupActorResponse is the response object for the LookupActor method.
 type LookupActorResponse struct {
+	// Host ID
+	HostID string
 	// Dapr App ID of the host
 	AppID string
 	// Host address (including port)

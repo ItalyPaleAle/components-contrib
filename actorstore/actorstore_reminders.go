@@ -58,6 +58,14 @@ type ReminderRef struct {
 	Name string
 }
 
+// ActorRef returns the actor reference for this reminder.
+func (r ReminderRef) ActorRef() ActorRef {
+	return ActorRef{
+		ActorType: r.ActorType,
+		ActorID:   r.ActorID,
+	}
+}
+
 // IsValid returns true if all required fields are present.
 func (r ReminderRef) IsValid() bool {
 	return r.ActorType != "" && r.ActorID != "" && r.Name != ""

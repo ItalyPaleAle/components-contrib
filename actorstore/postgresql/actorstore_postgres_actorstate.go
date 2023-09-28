@@ -232,7 +232,7 @@ func (p *PostgreSQL) RemoveActorHost(ctx context.Context, actorHostID string) er
 	return nil
 }
 
-func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef) (res actorstore.LookupActorResponse, err error) {
+func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef, opts actorstore.LookupActorOpts) (res actorstore.LookupActorResponse, err error) {
 	if ref.ActorType == "" || ref.ActorID == "" {
 		return res, actorstore.ErrInvalidRequestMissingParameters
 	}
@@ -243,16 +243,26 @@ func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef) (
 		actorsTable          = p.metadata.TableName(pgTableActors)
 	)
 
+	// If we have host restrictions, limit to those
+	var query string
+	var args []any
+	if len(opts.Hosts) == 0 {
+		query = fmt.Sprintf(lookupActorQuery, hostsTable, hostsActorTypesTable, actorsTable)
+		args = []any{ref.ActorType, ref.ActorID, p.metadata.Config.FailedInterval()}
+	} else {
+		query = fmt.Sprintf(lookupActorQueryWithHostRestriction, hostsTable, hostsActorTypesTable, actorsTable)
+		args = []any{ref.ActorType, ref.ActorID, p.metadata.Config.FailedInterval(), opts.Hosts}
+	}
+
 	// This query could fail if there's a race condition where the same actor is being invoked multiple times and it doesn't exist already
 	// So, let's implement a retry in case of conflicts
 	for i := 0; i < 3; i++ {
 		queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 		defer queryCancel()
 
-		err = p.db.QueryRow(queryCtx,
-			fmt.Sprintf(lookupActorQuery, hostsTable, hostsActorTypesTable, actorsTable),
-			ref.ActorType, ref.ActorID, p.metadata.Config.FailedInterval(),
-		).Scan(&res.AppID, &res.Address, &res.IdleTimeout)
+		err = p.db.
+			QueryRow(queryCtx, query, args...).
+			Scan(&res.HostID, &res.AppID, &res.Address, &res.IdleTimeout)
 
 		if err == nil {
 			break
