@@ -177,6 +177,6 @@ WHERE reminder_id IN (
     LIMIT $5
 )
 RETURNING
-    actor_type, actor_id, reminder_name,
+    reminder_id, actor_type, actor_id, reminder_name,
     EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
     reminder_data, reminder_lease_time;`

@@ -31,6 +31,10 @@ type StoreReminders interface {
 	// CreateReminder creates a new reminder.
 	CreateReminder(ctx context.Context, req CreateReminderRequest) error
 
+	// CreateLeasedReminder is like CreateReminder, but acquires the lease for the newly-created reminder right away.
+	// It returns the created reminder's data.
+	CreateLeasedReminder(ctx context.Context, req CreateReminderRequest) (res FetchedReminder, err error)
+
 	// DeleteReminder deletes an existing reminder before it fires.
 	// It erturns ErrReminderNotFound if it doesn't exist.
 	DeleteReminder(ctx context.Context, req ReminderRef) error
