@@ -109,13 +109,12 @@ func (p *PostgreSQL) CreateLeasedReminder(ctx context.Context, req actorstore.Cr
 	if err != nil {
 		return nil, fmt.Errorf("failed to create reminder: %w", err)
 	}
-	leaseData := res.Lease.(leaseData)
-	if leaseData.reminderID == "" || leaseData.leaseTime == nil {
+	if res == nil {
 		// Row was inserted, but we couldn't get a lease
 		return nil, nil
 	}
 
-	return &res, nil
+	return res, nil
 }
 
 func (p *PostgreSQL) DeleteReminder(ctx context.Context, req actorstore.ReminderRef) error {
@@ -166,7 +165,11 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch upcoming reminders: %w", err)
 		}
-		res = append(res, r)
+		if r == nil {
+			// Should never happen
+			continue
+		}
+		res = append(res, *r)
 	}
 
 	err := rows.Err()
@@ -181,21 +184,29 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 	return res, nil
 }
 
-func (p *PostgreSQL) scanFetchedReminderRow(row pgx.Row, now time.Time) (r actorstore.FetchedReminder, err error) {
+func (p *PostgreSQL) scanFetchedReminderRow(row pgx.Row, now time.Time) (*actorstore.FetchedReminder, error) {
 	var (
-		delay int
-		lease leaseData
+		actorType, actorID, name string
+		delay                    int
+		lease                    leaseData
 	)
-	err = row.Scan(&lease.reminderID, &r.ActorType, &r.ActorID, &r.Name, &delay, &r.Data, &lease.leaseTime)
+	err := row.Scan(&lease.reminderID, &actorType, &actorID, &name, &delay, &lease.leaseTime)
 	if err != nil {
-		return r, err
+		return nil, err
+	}
+
+	// If we couldn't get a lease, return nil
+	if lease.leaseTime == nil {
+		return nil, nil
 	}
 
 	// The query doesn't return an exact time, but rather the number of seconds from present, to make sure we always use the clock of the DB server and avoid clock skews
-	r.ExecutionTime = now.Add(time.Duration(delay) * time.Second)
-	r.Lease = lease
-
-	return r, nil
+	r := actorstore.NewFetchedReminder(
+		actorType+"||"+actorID+"||"+name,
+		now.Add(time.Duration(delay)*time.Second),
+		lease,
+	)
+	return &r, nil
 }
 
 type leaseData struct {

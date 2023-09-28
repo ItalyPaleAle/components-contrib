@@ -117,18 +117,31 @@ type FetchNextRemindersRequest struct {
 
 // FetchedReminder is the type for the reminders returned by FetchNextReminders.
 type FetchedReminder struct {
-	ReminderRef
-	ReminderOptions
+	key           string
+	executionTime time.Time
+	lease         any
+}
 
-	Lease any
+// NewFetchedReminder returns a new FetchedReminder object.
+func NewFetchedReminder(key string, executionTime time.Time, lease any) FetchedReminder {
+	return FetchedReminder{
+		key:           key,
+		executionTime: executionTime,
+		lease:         lease,
+	}
 }
 
 // Key implements the queuable interface.
 func (r FetchedReminder) Key() string {
-	return r.ActorType + "||" + r.ActorID + "||" + r.Name
+	return r.key
 }
 
 // ScheduledTime implements the queuable interface.
 func (r FetchedReminder) ScheduledTime() time.Time {
-	return r.ExecutionTime
+	return r.executionTime
+}
+
+// Lease returns the value of the lease property.
+func (r FetchedReminder) Lease() any {
+	return r.lease
 }

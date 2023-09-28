@@ -179,7 +179,7 @@ WHERE reminder_id IN (
 RETURNING
     reminder_id, actor_type, actor_id, reminder_name,
     EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
-    reminder_data, reminder_lease_time;`
+    reminder_lease_time;`
 
 // Query for creating (or replacing) a reminder and acquiring a lease at the same time.
 //
@@ -243,5 +243,5 @@ INSERT INTO %[1]s
     reminder_lease_pid = EXCLUDED.reminder_lease_pid
   RETURNING reminder_id, actor_type, actor_id, reminder_name,
     EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
-    reminder_data, reminder_lease_time;
+    reminder_lease_time;
 `
