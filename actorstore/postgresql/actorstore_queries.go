@@ -61,7 +61,7 @@ const migration2Query = `CREATE TABLE %[1]s (
   reminder_name text NOT NULL,
   reminder_execution_time timestamp with time zone NOT NULL,
   reminder_period text,
-  reminder_ttl timestamp,
+  reminder_ttl timestamp with time zone,
   reminder_data bytea,
   reminder_lease_time timestamp with time zone,
   reminder_lease_pid text
@@ -145,8 +145,8 @@ const lookupActorQuery = `WITH new_row AS (
 // 2. Lease duration, as a `time.Duration`
 // 3. Actor types that can be served by hosts connected to the current instance of the actors service, as a `string[]`
 // 4. IDs of actor hosts that have an active connection to the current instance of the actors service, as a `string[]`
-// 5. Maximum batch size, as `int`
-// 6. Process ID
+// 5. Maximum batch size, as an `int`
+// 6. Process ID, as a `string`
 //
 // fmt.Sprintf arguments:
 // 1. Name of the "reminders" table
@@ -180,3 +180,68 @@ RETURNING
     reminder_id, actor_type, actor_id, reminder_name,
     EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
     reminder_data, reminder_lease_time;`
+
+// Query for creating (or replacing) a reminder and acquiring a lease at the same time.
+//
+// This query performs an upsert for the reminder.
+// If the reminder that was upserted can be served by an actor host connected to this instance of the actors service (following the same logic as `remindersFetchQuery`), then it also sets the lease on the reminder, atomically.
+//
+// Query arguments:
+// 1. Actor type, as a `string`
+// 2. Actor ID, as a `string`
+// 3. Reminder name, as a `string`
+// 4. Reminder execution delay (from current time), as a `time.Duration`
+// 5. Reminder period, as a `*string`
+// 6. Reminder TTL, as a `*time.Time`
+// 7. Reminder data, as a `[]byte` (can be nil)
+// 8. Process ID, as a `string`
+// 9. Actor types that can be served by hosts connected to the current instance of the actors service, as a `string[]`
+// 10. IDs of actor hosts that have an active connection to the current instance of the actors service, as a `string[]`
+//
+// fmt.Sprintf arguments:
+// 1. Name of the "reminders" table
+// 2. Name of the "actors" table
+const createReminderWithLeaseQuery = `WITH c AS (
+  SELECT
+      CURRENT_TIMESTAMP AS reminder_lease_time,
+      $8 AS reminder_lease_pid
+  FROM %[2]s
+  WHERE
+      actor_type = $1
+      AND actor_id = $2
+      AND (
+          (
+              host_id IS NULL
+              AND actor_type = ANY($9)
+          )
+          OR host_id = ANY($10)
+      )
+), lease AS (
+  SELECT
+      c.reminder_lease_time,
+      c.reminder_lease_pid
+  FROM c
+  UNION ALL
+      SELECT
+          NULL AS reminder_lease_time,
+          NULL AS reminder_lease_pid
+      WHERE NOT EXISTS (
+          SELECT 1 from c
+      )
+)
+INSERT INTO %[1]s
+    (actor_type, actor_id, reminder_name, reminder_execution_time, reminder_period, reminder_ttl, reminder_data, reminder_lease_time, reminder_lease_pid)
+  SELECT
+    $1, $2, $3, CURRENT_TIMESTAMP + $4::interval, $5, $6, $7, lease.reminder_lease_time, lease.reminder_lease_pid
+  FROM lease
+  ON CONFLICT (actor_type, actor_id, reminder_name) DO UPDATE SET
+    reminder_execution_time = EXCLUDED.reminder_execution_time,
+    reminder_period = EXCLUDED.reminder_period,
+    reminder_ttl = EXCLUDED.reminder_ttl,
+    reminder_data = EXCLUDED.reminder_data,
+    reminder_lease_time = EXCLUDED.reminder_lease_time,
+    reminder_lease_pid = EXCLUDED.reminder_lease_pid
+  RETURNING reminder_id, actor_type, actor_id, reminder_name,
+    EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
+    reminder_data, reminder_lease_time;
+`

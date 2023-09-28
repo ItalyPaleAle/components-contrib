@@ -33,7 +33,8 @@ type StoreReminders interface {
 
 	// CreateLeasedReminder is like CreateReminder, but acquires the lease for the newly-created reminder right away.
 	// It returns the created reminder's data.
-	CreateLeasedReminder(ctx context.Context, req CreateReminderRequest) (res FetchedReminder, err error)
+	// If the returned data is nil, it means that the row was inserted, but we couldn't get a lease.
+	CreateLeasedReminder(ctx context.Context, req CreateLeasedReminderRequest) (res *FetchedReminder, err error)
 
 	// DeleteReminder deletes an existing reminder before it fires.
 	// It erturns ErrReminderNotFound if it doesn't exist.
@@ -93,6 +94,17 @@ type CreateReminderRequest struct {
 // IsValid returns true if all required fields are present.
 func (r CreateReminderRequest) IsValid() bool {
 	return r.ReminderRef.IsValid() && r.ReminderOptions.IsValid()
+}
+
+// CreateLeasedReminderRequest is the request for CreateLeasedReminder.
+type CreateLeasedReminderRequest struct {
+	// Reminder data
+	Reminder CreateReminderRequest
+
+	// List of hosts with active connections to this actor service instance.
+	Hosts []string
+	// List of actor types supported by hosts with active connections to this instance of the actor service.
+	ActorTypes []string
 }
 
 // FetchNextRemindersRequest is the request for FetchNextReminders.

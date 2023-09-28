@@ -23,11 +23,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type leaseData struct {
-	reminderID string
-	leaseTime  time.Time
-}
-
 func (p *PostgreSQL) GetReminder(ctx context.Context, req actorstore.ReminderRef) (res actorstore.GetReminderResponse, err error) {
 	if !req.IsValid() {
 		return res, actorstore.ErrInvalidRequestMissingParameters
@@ -88,45 +83,39 @@ func (p *PostgreSQL) CreateReminder(ctx context.Context, req actorstore.CreateRe
 	return nil
 }
 
-func (p *PostgreSQL) CreateLeasedReminder(ctx context.Context, req actorstore.CreateReminderRequest) (res actorstore.FetchedReminder, err error) {
-	if !req.IsValid() {
-		return res, actorstore.ErrInvalidRequestMissingParameters
+func (p *PostgreSQL) CreateLeasedReminder(ctx context.Context, req actorstore.CreateLeasedReminderRequest) (*actorstore.FetchedReminder, error) {
+	if !req.Reminder.IsValid() {
+		return nil, actorstore.ErrInvalidRequestMissingParameters
 	}
 
 	// Do not store the exact time, but rather the delay from now, to use the DB server's clock
 	var executionTime time.Duration
-	if !req.ExecutionTime.IsZero() {
-		executionTime = time.Until(req.ExecutionTime)
+	if !req.Reminder.ExecutionTime.IsZero() {
+		executionTime = time.Until(req.Reminder.ExecutionTime)
 	} else {
 		// Note that delay could be zero
-		executionTime = req.Delay
+		executionTime = req.Reminder.Delay
 	}
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
-	q := fmt.Sprintf(`INSERT INTO %s
-			(actor_type, actor_id, reminder_name, reminder_execution_time, reminder_period, reminder_ttl, reminder_data, reminder_lease_time, reminder_lease_pid)
-		VALUES ($1, $2, $3, CURRENT_TIMESTAMP + $4::interval, $5, $6, $7, CURRENT_TIMESTAMP, $8)
-		ON CONFLICT (actor_type, actor_id, reminder_name) DO UPDATE SET
-			reminder_execution_time = EXCLUDED.reminder_execution_time,
-			reminder_period = EXCLUDED.reminder_period,
-			reminder_ttl = EXCLUDED.reminder_ttl,
-			reminder_data = EXCLUDED.reminder_data,
-			reminder_lease_time = EXCLUDED.reminder_lease_time,
-			reminder_lease_pid = EXCLUDED.reminder_lease_pid
-		RETURNING reminder_id, actor_type, actor_id, reminder_name,
-			EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
-			reminder_data, reminder_lease_time`,
-		p.metadata.TableName(pgTableReminders))
+	q := fmt.Sprintf(createReminderWithLeaseQuery, p.metadata.TableName(pgTableReminders), p.metadata.TableName(pgTableActors))
 	row := p.db.QueryRow(queryCtx, q,
-		req.ActorType, req.ActorID, req.Name, executionTime,
-		req.Period, req.TTL, req.Data, p.metadata.PID,
+		req.Reminder.ActorType, req.Reminder.ActorID, req.Reminder.Name, executionTime,
+		req.Reminder.Period, req.Reminder.TTL, req.Reminder.Data, p.metadata.PID,
+		req.ActorTypes, req.Hosts,
 	)
-	res, err = p.scanFetchedReminderRow(row, time.Now())
+	res, err := p.scanFetchedReminderRow(row, time.Now())
 	if err != nil {
-		return res, fmt.Errorf("failed to create reminder: %w", err)
+		return nil, fmt.Errorf("failed to create reminder: %w", err)
 	}
-	return res, nil
+	leaseData := res.Lease.(leaseData)
+	if leaseData.reminderID == "" || leaseData.leaseTime == nil {
+		// Row was inserted, but we couldn't get a lease
+		return nil, nil
+	}
+
+	return &res, nil
 }
 
 func (p *PostgreSQL) DeleteReminder(ctx context.Context, req actorstore.ReminderRef) error {
@@ -207,4 +196,9 @@ func (p *PostgreSQL) scanFetchedReminderRow(row pgx.Row, now time.Time) (r actor
 	r.Lease = lease
 
 	return r, nil
+}
+
+type leaseData struct {
+	reminderID string
+	leaseTime  *time.Time
 }
