@@ -73,7 +73,9 @@ func (p *PostgreSQL) CreateReminder(ctx context.Context, req actorstore.CreateRe
 			reminder_execution_time = EXCLUDED.reminder_execution_time,
 			reminder_period = EXCLUDED.reminder_period,
 			reminder_ttl = EXCLUDED.reminder_ttl,
-			reminder_data = EXCLUDED.reminder_data`, p.metadata.TableName(pgTableReminders))
+			reminder_data = EXCLUDED.reminder_data,
+			reminder_lease_time = NULL,
+			reminder_lease_pid = NULL`, p.metadata.TableName(pgTableReminders))
 	_, err := p.db.Exec(queryCtx, q, req.ActorType, req.ActorID, req.Name, executionTime, req.Period, req.TTL, req.Data)
 	if err != nil {
 		return fmt.Errorf("failed to create reminder: %w", err)
