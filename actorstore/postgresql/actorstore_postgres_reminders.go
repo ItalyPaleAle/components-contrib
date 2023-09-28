@@ -220,6 +220,27 @@ func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, req *actorstore.F
 	return res, nil
 }
 
+func (p *PostgreSQL) DeleteReminderWithLease(ctx context.Context, req *actorstore.FetchedReminder) error {
+	lease, ok := req.Lease().(leaseData)
+	if !ok || lease.reminderID == "" || lease.leaseTime == nil {
+		return errors.New("invalid reminder lease object")
+	}
+
+	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	defer queryCancel()
+	_, err := p.db.Exec(queryCtx,
+		fmt.Sprintf(`DELETE FROM %s WHERE reminder_id = $1 AND reminder_lease_time = $2 AND reminder_lease_pid = $3`, p.metadata.TableName(pgTableReminders)),
+		lease.reminderID, *lease.leaseTime, p.metadata.PID,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return actorstore.ErrReminderNotFound
+		}
+		return fmt.Errorf("failed to delete reminder: %w", err)
+	}
+	return nil
+}
+
 func (p *PostgreSQL) scanFetchedReminderRow(row pgx.Row, now time.Time) (*actorstore.FetchedReminder, error) {
 	var (
 		actorType, actorID, name string

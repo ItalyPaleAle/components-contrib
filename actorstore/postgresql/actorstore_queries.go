@@ -163,7 +163,7 @@ const lookupActorQueryWithHostRestriction = `WITH new_row AS (
     RETURNING host_id, actor_idle_timeout
 )
 (
-  SELECT %[1]s.host_app_id, %[1]s.host_address, %[3]s.actor_idle_timeout
+  SELECT %[1]s.host_id, %[1]s.host_app_id, %[1]s.host_address, %[3]s.actor_idle_timeout
     FROM %[3]s, %[1]s
     WHERE
       %[3]s.actor_type = $1
@@ -172,7 +172,7 @@ const lookupActorQueryWithHostRestriction = `WITH new_row AS (
       AND %[1]s.host_id = ANY($4)
       AND %[1]s.host_last_healthcheck >= CURRENT_TIMESTAMP - $3::interval
   UNION ALL
-  SELECT %[1]s.host_app_id, %[1]s.host_address, new_row.actor_idle_timeout
+  SELECT %[1]s.host_id, %[1]s.host_app_id, %[1]s.host_address, new_row.actor_idle_timeout
     FROM new_row, %[1]s
     WHERE
       new_row.host_id = %[1]s.host_id

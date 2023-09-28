@@ -46,6 +46,10 @@ type StoreReminders interface {
 	// GetReminderWithLease retrieves a reminder from a FetchedReminder object that contains a lease too.
 	// It returns ErrReminderNotFound if it doesn't exist or the lease is invalid.
 	GetReminderWithLease(ctx context.Context, req *FetchedReminder) (res Reminder, err error)
+
+	// DeleteReminderWithLease deletes a reminder from a FetchReminder object that contains a lease too.
+	// It returns ErrReminderNotFound if it doesn't exist or the lease is invalid.
+	DeleteReminderWithLease(ctx context.Context, req *FetchedReminder) error
 }
 
 // ReminderRef is the reference to a reminder (reminder name, actor type and ID).
