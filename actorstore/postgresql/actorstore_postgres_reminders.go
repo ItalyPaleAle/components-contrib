@@ -180,8 +180,8 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 	return res, nil
 }
 
-func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, req *actorstore.FetchedReminder) (res actorstore.Reminder, err error) {
-	lease, ok := req.Lease().(leaseData)
+func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder) (res actorstore.Reminder, err error) {
+	lease, ok := fr.Lease().(leaseData)
 	if !ok || lease.reminderID == "" || lease.leaseTime == nil {
 		return res, errors.New("invalid reminder lease object")
 	}
@@ -220,8 +220,41 @@ func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, req *actorstore.F
 	return res, nil
 }
 
-func (p *PostgreSQL) DeleteReminderWithLease(ctx context.Context, req *actorstore.FetchedReminder) error {
-	lease, ok := req.Lease().(leaseData)
+func (p *PostgreSQL) UpdateReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder, req actorstore.UpdateReminderWithLeaseRequest) error {
+	lease, ok := fr.Lease().(leaseData)
+	if !ok || lease.reminderID == "" || lease.leaseTime == nil {
+		return errors.New("invalid reminder lease object")
+	}
+
+	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	defer queryCancel()
+	res, err := p.db.Exec(queryCtx,
+		fmt.Sprintf(`UPDATE %s SET
+				reminder_execution_time = $4,
+				reminder_period = $5,
+				reminder_ttl = $6,
+				reminder_lease_time = NULL,
+				reminder_lease_pid = NULL
+			WHERE
+				reminder_id = $1
+				AND reminder_lease_time = $2
+				AND reminder_lease_pid = $3`,
+			p.metadata.TableName(pgTableReminders),
+		),
+		lease.reminderID, *lease.leaseTime, p.metadata.PID,
+		req.ExecutionTime, req.Period, req.TTL,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update reminder: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return actorstore.ErrReminderNotFound
+	}
+	return nil
+}
+
+func (p *PostgreSQL) DeleteReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder) error {
+	lease, ok := fr.Lease().(leaseData)
 	if !ok || lease.reminderID == "" || lease.leaseTime == nil {
 		return errors.New("invalid reminder lease object")
 	}

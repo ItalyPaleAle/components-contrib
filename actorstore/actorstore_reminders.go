@@ -45,11 +45,15 @@ type StoreReminders interface {
 
 	// GetReminderWithLease retrieves a reminder from a FetchedReminder object that contains a lease too.
 	// It returns ErrReminderNotFound if it doesn't exist or the lease is invalid.
-	GetReminderWithLease(ctx context.Context, req *FetchedReminder) (res Reminder, err error)
+	GetReminderWithLease(ctx context.Context, fr *FetchedReminder) (res Reminder, err error)
 
 	// DeleteReminderWithLease deletes a reminder from a FetchReminder object that contains a lease too.
 	// It returns ErrReminderNotFound if it doesn't exist or the lease is invalid.
-	DeleteReminderWithLease(ctx context.Context, req *FetchedReminder) error
+	DeleteReminderWithLease(ctx context.Context, fr *FetchedReminder) error
+
+	// UpdateReminderWithLease updates a reminder's execution time, period, and TTL, from a FetchReminder object that contains a lease too.
+	// It returns ErrReminderNotFound if it doesn't exist or the lease is invalid.
+	UpdateReminderWithLease(ctx context.Context, fr *FetchedReminder, req UpdateReminderWithLeaseRequest) error
 }
 
 // ReminderRef is the reference to a reminder (reminder name, actor type and ID).
@@ -163,4 +167,14 @@ func (r FetchedReminder) ScheduledTime() time.Time {
 // Lease returns the value of the lease property.
 func (r FetchedReminder) Lease() any {
 	return r.lease
+}
+
+// UpdateReminderWithLeaseRequest is the request for UpdateReminderWithLease.
+type UpdateReminderWithLeaseRequest struct {
+	// Scheduled execution time.
+	ExecutionTime time.Time
+	// Reminder repetition period.
+	Period *string
+	// Deadline for repeating reminders (can be nil).
+	TTL *time.Time
 }
