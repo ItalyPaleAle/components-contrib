@@ -137,7 +137,7 @@ func (p *PostgreSQL) DeleteReminder(ctx context.Context, req actorstore.Reminder
 	return nil
 }
 
-func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.FetchNextRemindersRequest) ([]actorstore.FetchedReminder, error) {
+func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.FetchNextRemindersRequest) ([]*actorstore.FetchedReminder, error) {
 	cfg := p.metadata.Config
 
 	// If there's no host or supported actor types, that means there's nothing to return
@@ -146,7 +146,7 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 	}
 
 	// Allocate with enough capacity for the max batch size
-	res := make([]actorstore.FetchedReminder, 0, cfg.RemindersFetchAheadBatchSize)
+	res := make([]*actorstore.FetchedReminder, 0, cfg.RemindersFetchAheadBatchSize)
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
@@ -169,17 +169,53 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 			// Should never happen
 			continue
 		}
-		res = append(res, *r)
+		res = append(res, r)
 	}
 
 	err := rows.Err()
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, actorstore.ErrReminderNotFound
-		}
-
 		return nil, fmt.Errorf("failed to fetch upcoming reminders: %w", err)
 	}
+
+	return res, nil
+}
+
+func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, req *actorstore.FetchedReminder) (res actorstore.Reminder, err error) {
+	lease, ok := req.Lease().(leaseData)
+	if !ok || lease.reminderID == "" || lease.leaseTime == nil {
+		return res, errors.New("invalid reminder lease object")
+	}
+
+	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	defer queryCancel()
+
+	q := fmt.Sprintf(`SELECT
+			actor_type, actor_id, reminder_name,
+			EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
+			reminder_period, reminder_ttl, reminder_data
+		FROM %s
+		WHERE
+			reminder_id = $1
+			AND reminder_lease_time = $2
+			AND reminder_lease_pid = $3`,
+		p.metadata.TableName(pgTableReminders),
+	)
+	var delay int
+	err = p.db.
+		QueryRow(queryCtx, q, lease.reminderID, *lease.leaseTime, p.metadata.PID).
+		Scan(
+			&res.ActorType, &res.ActorID, &res.Name,
+			&delay, &res.Period, &res.TTL, &res.Data,
+		)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return res, actorstore.ErrReminderNotFound
+		}
+		return res, fmt.Errorf("failed to retrieve reminder: %w", err)
+	}
+
+	// The query doesn't return an exact time, but rather the number of seconds from present, to make sure we always use the clock of the DB server and avoid clock skews
+	res.ExecutionTime = time.Now().Add(time.Duration(delay) * time.Second)
 
 	return res, nil
 }

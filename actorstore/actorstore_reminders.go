@@ -25,7 +25,7 @@ var ErrReminderNotFound = errors.New("reminder not found")
 // StoreReminders is the part of the Store interface for managing reminders.
 type StoreReminders interface {
 	// GetReminder returns a reminder.
-	// It erturns ErrReminderNotFound if it doesn't exist.
+	// It returns ErrReminderNotFound if it doesn't exist.
 	GetReminder(ctx context.Context, req ReminderRef) (GetReminderResponse, error)
 
 	// CreateReminder creates a new reminder.
@@ -41,7 +41,11 @@ type StoreReminders interface {
 	DeleteReminder(ctx context.Context, req ReminderRef) error
 
 	// FetchNextReminders retrieves the list of upcoming reminders, acquiring a lock on them.
-	FetchNextReminders(ctx context.Context, req FetchNextRemindersRequest) ([]FetchedReminder, error)
+	FetchNextReminders(ctx context.Context, req FetchNextRemindersRequest) ([]*FetchedReminder, error)
+
+	// GetReminderWithLease retrieves a reminder from a FetchedReminder object that contains a lease too.
+	// It returns ErrReminderNotFound if it doesn't exist or the lease is invalid.
+	GetReminderWithLease(ctx context.Context, req *FetchedReminder) (res Reminder, err error)
 }
 
 // ReminderRef is the reference to a reminder (reminder name, actor type and ID).
@@ -86,20 +90,23 @@ type GetReminderResponse struct {
 }
 
 // CreateReminderRequest is the request for CreateReminder.
-type CreateReminderRequest struct {
+type CreateReminderRequest = Reminder
+
+// Reminder includes a full reminder, with all its properties.
+type Reminder struct {
 	ReminderRef
 	ReminderOptions
 }
 
 // IsValid returns true if all required fields are present.
-func (r CreateReminderRequest) IsValid() bool {
+func (r Reminder) IsValid() bool {
 	return r.ReminderRef.IsValid() && r.ReminderOptions.IsValid()
 }
 
 // CreateLeasedReminderRequest is the request for CreateLeasedReminder.
 type CreateLeasedReminderRequest struct {
 	// Reminder data
-	Reminder CreateReminderRequest
+	Reminder Reminder
 
 	// List of hosts with active connections to this actor service instance.
 	Hosts []string
