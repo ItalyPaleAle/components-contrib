@@ -63,13 +63,14 @@ const migration2Query = `CREATE TABLE %[1]s (
   reminder_period text,
   reminder_ttl timestamp with time zone,
   reminder_data bytea,
+  reminder_lease_id uuid,
   reminder_lease_time timestamp with time zone,
   reminder_lease_pid text
 );
 
 CREATE UNIQUE INDEX ON %[1]s (actor_type, actor_id, reminder_name);
 CREATE INDEX ON %[1]s (reminder_execution_time);
-CREATE INDEX ON %[1]s (reminder_lease_time);
+CREATE INDEX ON %[1]s (reminder_lease_pid);
 `
 
 // Query for looking up an actor, or creating it ex novo.
@@ -200,6 +201,7 @@ const lookupActorQueryWithHostRestriction = `WITH new_row AS (
 // 2. Name of the "actors" table
 const remindersFetchQuery = `UPDATE %[1]s
 SET
+    reminder_lease_id = gen_random_uuid(),
     reminder_lease_time = CURRENT_TIMESTAMP,
     reminder_lease_pid = $6
 WHERE reminder_id IN (
@@ -210,7 +212,8 @@ WHERE reminder_id IN (
     WHERE 
         %[1]s.reminder_execution_time < CURRENT_TIMESTAMP + $1::interval
         AND (
-            %[1]s.reminder_lease_time IS NULL
+            %[1]s.reminder_lease_id IS NULL
+            OR %[1]s.reminder_lease_time IS NULL
             OR %[1]s.reminder_lease_time < CURRENT_TIMESTAMP - $2::interval
         )
         AND (
@@ -226,7 +229,7 @@ WHERE reminder_id IN (
 RETURNING
     reminder_id, actor_type, actor_id, reminder_name,
     EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
-    reminder_lease_time;`
+    reminder_lease_id`
 
 // Query for creating (or replacing) a reminder and acquiring a lease at the same time.
 //
@@ -250,6 +253,7 @@ RETURNING
 // 2. Name of the "actors" table
 const createReminderWithLeaseQuery = `WITH c AS (
   SELECT
+      gen_random_uuid() AS reminder_lease_id,
       CURRENT_TIMESTAMP AS reminder_lease_time,
       $8 AS reminder_lease_pid
   FROM %[2]s
@@ -265,11 +269,13 @@ const createReminderWithLeaseQuery = `WITH c AS (
       )
 ), lease AS (
   SELECT
+      c.reminder_lease_id,
       c.reminder_lease_time,
       c.reminder_lease_pid
   FROM c
   UNION ALL
       SELECT
+          NULL AS reminder_lease_id,
           NULL AS reminder_lease_time,
           NULL AS reminder_lease_pid
       WHERE NOT EXISTS (
@@ -277,18 +283,19 @@ const createReminderWithLeaseQuery = `WITH c AS (
       )
 )
 INSERT INTO %[1]s
-    (actor_type, actor_id, reminder_name, reminder_execution_time, reminder_period, reminder_ttl, reminder_data, reminder_lease_time, reminder_lease_pid)
+    (actor_type, actor_id, reminder_name, reminder_execution_time, reminder_period, reminder_ttl, reminder_data, reminder_lease_id, reminder_lease_time, reminder_lease_pid)
   SELECT
-    $1, $2, $3, CURRENT_TIMESTAMP + $4::interval, $5, $6, $7, lease.reminder_lease_time, lease.reminder_lease_pid
+    $1, $2, $3, CURRENT_TIMESTAMP + $4::interval, $5, $6, $7, lease.reminder_lease_id, lease.reminder_lease_time, lease.reminder_lease_pid
   FROM lease
   ON CONFLICT (actor_type, actor_id, reminder_name) DO UPDATE SET
     reminder_execution_time = EXCLUDED.reminder_execution_time,
     reminder_period = EXCLUDED.reminder_period,
     reminder_ttl = EXCLUDED.reminder_ttl,
     reminder_data = EXCLUDED.reminder_data,
+    reminder_lease_id = EXCLUDED.reminder_lease_id,
     reminder_lease_time = EXCLUDED.reminder_lease_time,
     reminder_lease_pid = EXCLUDED.reminder_lease_pid
   RETURNING reminder_id, actor_type, actor_id, reminder_name,
     EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
-    reminder_lease_time;
+    reminder_lease_id;
 `

@@ -182,7 +182,7 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 
 func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder) (res actorstore.Reminder, err error) {
 	lease, ok := fr.Lease().(leaseData)
-	if !ok || lease.reminderID == "" || lease.leaseTime == nil {
+	if !ok || !lease.IsValid() {
 		return res, errors.New("invalid reminder lease object")
 	}
 
@@ -196,13 +196,13 @@ func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, fr *actorstore.Fe
 		FROM %s
 		WHERE
 			reminder_id = $1
-			AND reminder_lease_time = $2
+			AND reminder_lease_id = $2
 			AND reminder_lease_pid = $3`,
 		p.metadata.TableName(pgTableReminders),
 	)
 	var delay int
 	err = p.db.
-		QueryRow(queryCtx, q, lease.reminderID, *lease.leaseTime, p.metadata.PID).
+		QueryRow(queryCtx, q, lease.reminderID, *lease.leaseID, p.metadata.PID).
 		Scan(
 			&res.ActorType, &res.ActorID, &res.Name,
 			&delay, &res.Period, &res.TTL, &res.Data,
@@ -222,7 +222,7 @@ func (p *PostgreSQL) GetReminderWithLease(ctx context.Context, fr *actorstore.Fe
 
 func (p *PostgreSQL) UpdateReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder, req actorstore.UpdateReminderWithLeaseRequest) error {
 	lease, ok := fr.Lease().(leaseData)
-	if !ok || lease.reminderID == "" || lease.leaseTime == nil {
+	if !ok || !lease.IsValid() {
 		return errors.New("invalid reminder lease object")
 	}
 
@@ -232,7 +232,7 @@ func (p *PostgreSQL) UpdateReminderWithLease(ctx context.Context, fr *actorstore
 	// Unless KeepLease is true, we also release the lease on the reminder
 	var leaseQuery string
 	if !req.KeepLease {
-		leaseQuery = "reminder_lease_time = NULL, reminder_lease_pid = NULL,"
+		leaseQuery = "reminder_lease_id = NULL, reminder_lease_time = NULL, reminder_lease_pid = NULL,"
 	} else {
 		// Refresh the lease without releasing it
 		leaseQuery = "reminder_lease_time = CURRENT_TIMESTAMP,"
@@ -246,11 +246,11 @@ func (p *PostgreSQL) UpdateReminderWithLease(ctx context.Context, fr *actorstore
 				reminder_ttl = $6
 			WHERE
 				reminder_id = $1
-				AND reminder_lease_time = $2
+				AND reminder_lease_id = $2
 				AND reminder_lease_pid = $3`,
 			p.metadata.TableName(pgTableReminders), leaseQuery,
 		),
-		lease.reminderID, *lease.leaseTime, p.metadata.PID,
+		lease.reminderID, *lease.leaseID, p.metadata.PID,
 		req.ExecutionTime, req.Period, req.TTL,
 	)
 	if err != nil {
@@ -264,15 +264,15 @@ func (p *PostgreSQL) UpdateReminderWithLease(ctx context.Context, fr *actorstore
 
 func (p *PostgreSQL) DeleteReminderWithLease(ctx context.Context, fr *actorstore.FetchedReminder) error {
 	lease, ok := fr.Lease().(leaseData)
-	if !ok || lease.reminderID == "" || lease.leaseTime == nil {
+	if !ok || !lease.IsValid() {
 		return errors.New("invalid reminder lease object")
 	}
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
 	_, err := p.db.Exec(queryCtx,
-		fmt.Sprintf(`DELETE FROM %s WHERE reminder_id = $1 AND reminder_lease_time = $2 AND reminder_lease_pid = $3`, p.metadata.TableName(pgTableReminders)),
-		lease.reminderID, *lease.leaseTime, p.metadata.PID,
+		fmt.Sprintf(`DELETE FROM %s WHERE reminder_id = $1 AND reminder_lease_id = $2 AND reminder_lease_pid = $3`, p.metadata.TableName(pgTableReminders)),
+		lease.reminderID, *lease.leaseID, p.metadata.PID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -289,13 +289,13 @@ func (p *PostgreSQL) scanFetchedReminderRow(row pgx.Row, now time.Time) (*actors
 		delay                    int
 		lease                    leaseData
 	)
-	err := row.Scan(&lease.reminderID, &actorType, &actorID, &name, &delay, &lease.leaseTime)
+	err := row.Scan(&lease.reminderID, &actorType, &actorID, &name, &delay, &lease.leaseID)
 	if err != nil {
 		return nil, err
 	}
 
 	// If we couldn't get a lease, return nil
-	if lease.leaseTime == nil {
+	if lease.leaseID == nil || *lease.leaseID == "" {
 		return nil, nil
 	}
 
@@ -310,5 +310,9 @@ func (p *PostgreSQL) scanFetchedReminderRow(row pgx.Row, now time.Time) (*actors
 
 type leaseData struct {
 	reminderID string
-	leaseTime  *time.Time
+	leaseID    *string
+}
+
+func (ld leaseData) IsValid() bool {
+	return ld.reminderID != "" && ld.leaseID != nil && *ld.leaseID != ""
 }
