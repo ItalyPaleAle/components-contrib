@@ -54,6 +54,10 @@ type StoreReminders interface {
 	// UpdateReminderWithLease updates a reminder's execution time, period, and TTL, from a FetchReminder object that contains a lease too.
 	// It returns ErrReminderNotFound if it doesn't exist or the lease is invalid.
 	UpdateReminderWithLease(ctx context.Context, fr *FetchedReminder, req UpdateReminderWithLeaseRequest) error
+
+	// RenewReminderLeases renews the leases for all reminders owned by this process.
+	// Returns the number of leases that have been renewed.
+	RenewReminderLeases(ctx context.Context) (int64, error)
 }
 
 // ReminderRef is the reference to a reminder (reminder name, actor type and ID).

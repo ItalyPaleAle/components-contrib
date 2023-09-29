@@ -283,6 +283,29 @@ func (p *PostgreSQL) DeleteReminderWithLease(ctx context.Context, fr *actorstore
 	return nil
 }
 
+func (p *PostgreSQL) RenewReminderLeases(ctx context.Context) (int64, error) {
+	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	defer queryCancel()
+
+	res, err := p.db.Exec(queryCtx,
+		fmt.Sprintf(`UPDATE %s
+			SET reminder_lease_time = CURRENT_TIMESTAMP
+			WHERE
+				reminder_lease_pid = $1
+				AND reminder_lease_time IS NOT NULL
+				AND reminder_lease_time >= CURRENT_TIMESTAMP - $2::interval
+				AND reminder_lease_id IS NOT NULL`,
+			p.metadata.TableName(pgTableReminders),
+		),
+		p.metadata.PID, p.metadata.Config.RemindersLeaseDuration,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("database error: %w", err)
+	}
+
+	return res.RowsAffected(), nil
+}
+
 func (p *PostgreSQL) scanFetchedReminderRow(row pgx.Row, now time.Time) (*actorstore.FetchedReminder, error) {
 	var (
 		actorType, actorID, name string
