@@ -283,21 +283,41 @@ func (p *PostgreSQL) DeleteReminderWithLease(ctx context.Context, fr *actorstore
 	return nil
 }
 
-func (p *PostgreSQL) RenewReminderLeases(ctx context.Context) (int64, error) {
+func (p *PostgreSQL) RenewReminderLeases(ctx context.Context, req actorstore.RenewReminderLeasesRequest) (int64, error) {
+	// If there's no connected host or no supported actor type, do not renew any lease
+	if len(req.Hosts) == 0 && len(req.ActorTypes) == 0 {
+		return 0, nil
+	}
+
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
 
 	res, err := p.db.Exec(queryCtx,
-		fmt.Sprintf(`UPDATE %s
+		fmt.Sprintf(`UPDATE %[1]s
 			SET reminder_lease_time = CURRENT_TIMESTAMP
-			WHERE
-				reminder_lease_pid = $1
-				AND reminder_lease_time IS NOT NULL
-				AND reminder_lease_time >= CURRENT_TIMESTAMP - $2::interval
-				AND reminder_lease_id IS NOT NULL`,
+			WHERE reminder_id IN (
+				SELECT reminder_id
+				FROM %[1]s
+				LEFT JOIN %[2]s
+					ON %[2]s.actor_type = %[1]s.actor_type AND %[2]s.actor_id = %[1]s.actor_id
+				WHERE 
+					%[1]s.reminder_lease_pid = $1
+					AND %[1]s.reminder_lease_time IS NOT NULL
+					AND %[1]s.reminder_lease_time >= CURRENT_TIMESTAMP - $2::interval
+					AND %[1]s.reminder_lease_id IS NOT NULL
+					AND (
+						(
+							%[2]s.host_id IS NULL
+							AND %[1]s.actor_type = ANY($3)
+						)
+						OR %[2]s.host_id = ANY($4)
+					)
+			)`,
 			p.metadata.TableName(pgTableReminders),
+			p.metadata.TableName(pgTableActors),
 		),
 		p.metadata.PID, p.metadata.Config.RemindersLeaseDuration,
+		req.ActorTypes, req.Hosts,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("database error: %w", err)

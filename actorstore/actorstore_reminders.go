@@ -57,7 +57,7 @@ type StoreReminders interface {
 
 	// RenewReminderLeases renews the leases for all reminders owned by this process.
 	// Returns the number of leases that have been renewed.
-	RenewReminderLeases(ctx context.Context) (int64, error)
+	RenewReminderLeases(ctx context.Context, req RenewReminderLeasesRequest) (int64, error)
 }
 
 // ReminderRef is the reference to a reminder (reminder name, actor type and ID).
@@ -183,4 +183,12 @@ type UpdateReminderWithLeaseRequest struct {
 	TTL *time.Time
 	// If true, does not remove the lease
 	KeepLease bool
+}
+
+// RenewReminderLeasesRequest is the request for RenewReminderLeases.
+type RenewReminderLeasesRequest struct {
+	// List of hosts with active connections to this actor service instance.
+	Hosts []string
+	// List of actor types supported by hosts with active connections to this instance of the actor service.
+	ActorTypes []string
 }
