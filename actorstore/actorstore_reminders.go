@@ -177,4 +177,6 @@ type UpdateReminderWithLeaseRequest struct {
 	Period *string
 	// Deadline for repeating reminders (can be nil).
 	TTL *time.Time
+	// If true, does not remove the lease
+	KeepLease bool
 }

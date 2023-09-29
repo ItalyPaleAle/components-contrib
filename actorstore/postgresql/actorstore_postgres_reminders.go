@@ -228,18 +228,27 @@ func (p *PostgreSQL) UpdateReminderWithLease(ctx context.Context, fr *actorstore
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
+
+	// Unless KeepLease is true, we also release the lease on the reminder
+	var leaseQuery string
+	if !req.KeepLease {
+		leaseQuery = "reminder_lease_time = NULL, reminder_lease_pid = NULL,"
+	} else {
+		// Refresh the lease without releasing it
+		leaseQuery = "reminder_lease_time = CURRENT_TIMESTAMP,"
+	}
+
 	res, err := p.db.Exec(queryCtx,
 		fmt.Sprintf(`UPDATE %s SET
+				%s
 				reminder_execution_time = $4,
 				reminder_period = $5,
-				reminder_ttl = $6,
-				reminder_lease_time = NULL,
-				reminder_lease_pid = NULL
+				reminder_ttl = $6
 			WHERE
 				reminder_id = $1
 				AND reminder_lease_time = $2
 				AND reminder_lease_pid = $3`,
-			p.metadata.TableName(pgTableReminders),
+			p.metadata.TableName(pgTableReminders), leaseQuery,
 		),
 		lease.reminderID, *lease.leaseTime, p.metadata.PID,
 		req.ExecutionTime, req.Period, req.TTL,
