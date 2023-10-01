@@ -58,6 +58,10 @@ type StoreReminders interface {
 	// RenewReminderLeases renews the leases for all reminders owned by this process.
 	// Returns the number of leases that have been renewed.
 	RenewReminderLeases(ctx context.Context, req RenewReminderLeasesRequest) (int64, error)
+
+	// RelinquishReminderLease relinquishes a lease currently active on a reminder.
+	// It returns ErrReminderNotFound if it doesn't exist or the lease is invalid.
+	RelinquishReminderLease(ctx context.Context, fr *FetchedReminder) error
 }
 
 // ReminderRef is the reference to a reminder (reminder name, actor type and ID).

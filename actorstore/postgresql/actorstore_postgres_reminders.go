@@ -326,6 +326,37 @@ func (p *PostgreSQL) RenewReminderLeases(ctx context.Context, req actorstore.Ren
 	return res.RowsAffected(), nil
 }
 
+func (p *PostgreSQL) RelinquishReminderLease(ctx context.Context, fr *actorstore.FetchedReminder) error {
+	lease, ok := fr.Lease().(leaseData)
+	if !ok || !lease.IsValid() {
+		return errors.New("invalid reminder lease object")
+	}
+
+	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
+	defer queryCancel()
+	_, err := p.db.Exec(queryCtx,
+		fmt.Sprintf(`UPDATE %s
+			SET
+				reminder_lease_id = NULL,
+				reminder_lease_time = NULL,
+				reminder_lease_pid = NULL
+			WHERE
+				reminder_id = $1
+				AND reminder_lease_id = $2
+				AND reminder_lease_pid = $3`,
+			p.metadata.TableName(pgTableReminders),
+		),
+		lease.reminderID, *lease.leaseID, p.metadata.PID,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return actorstore.ErrReminderNotFound
+		}
+		return fmt.Errorf("failed to relinquish lease for reminder: %w", err)
+	}
+	return nil
+}
+
 func (p *PostgreSQL) scanFetchedReminderRow(row pgx.Row, now time.Time) (*actorstore.FetchedReminder, error) {
 	var (
 		actorType, actorID, name string
