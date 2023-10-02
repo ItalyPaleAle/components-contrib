@@ -156,6 +156,11 @@ func (p *PostgreSQL) Close() (err error) {
 	return err
 }
 
+// GetConn returns the database connection, and it's primarily meant for testing.
+func (p *PostgreSQL) GetConn() *pgxpool.Pool {
+	return p.db
+}
+
 // Returns true if the error is a unique constraint violation error, such as a duplicate unique index or primary key.
 func isUniqueViolationError(err error) bool {
 	if err == nil {
