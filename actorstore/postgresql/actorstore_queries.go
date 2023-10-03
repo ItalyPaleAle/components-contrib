@@ -45,7 +45,7 @@ CREATE TABLE %[3]s (
   actor_id text NOT NULL,
   host_id uuid NOT NULL,
   actor_idle_timeout integer NOT NULL,
-  actor_activation timestamp with time zone NOT NULL,
+  actor_activation timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (actor_type, actor_id),
   FOREIGN KEY (host_id) REFERENCES %[1]s (host_id) ON DELETE CASCADE
 );`
