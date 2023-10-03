@@ -31,9 +31,8 @@ func GetTestData() TestData {
 				Address:         "1.1.1.1",
 				AppID:           "myapp1",
 				LastHealthCheck: now,
-				ActorTypes: []TestDataActorType{
-					{
-						ActorType:   "type-A",
+				ActorTypes: map[string]TestDataActorType{
+					"type-A": {
 						IdleTimeout: 10 * time.Minute,
 						ActorIDs: []string{
 							"type-A.11",
@@ -41,8 +40,7 @@ func GetTestData() TestData {
 							"type-A.13",
 						},
 					},
-					{
-						ActorType:   "type-B",
+					"type-B": {
 						IdleTimeout: time.Hour,
 						ActorIDs: []string{
 							"type-B.111",
@@ -55,17 +53,15 @@ func GetTestData() TestData {
 				Address:         "1.1.1.2",
 				AppID:           "myapp1",
 				LastHealthCheck: now.Add(-1 * time.Minute),
-				ActorTypes: []TestDataActorType{
-					{
-						ActorType:   "type-A",
+				ActorTypes: map[string]TestDataActorType{
+					"type-A": {
 						IdleTimeout: 10 * time.Minute,
 						ActorIDs: []string{
 							"type-A.21",
 							"type-A.22",
 						},
 					},
-					{
-						ActorType:   "type-B",
+					"type-B": {
 						IdleTimeout: time.Hour,
 						ActorIDs: []string{
 							"type-B.121",
@@ -77,16 +73,14 @@ func GetTestData() TestData {
 				Address:         "1.2.1.1",
 				AppID:           "myapp2",
 				LastHealthCheck: now,
-				ActorTypes: []TestDataActorType{
-					{
-						ActorType:   "type-B",
+				ActorTypes: map[string]TestDataActorType{
+					"type-B": {
 						IdleTimeout: time.Hour,
 						ActorIDs: []string{
 							"type-B.211",
 						},
 					},
-					{
-						ActorType:   "type.C",
+					"type.C": {
 						IdleTimeout: 30 * time.Second,
 						ActorIDs: []string{
 							"type.C-11",
@@ -100,9 +94,8 @@ func GetTestData() TestData {
 				Address:         "1.2.1.2",
 				AppID:           "myapp2",
 				LastHealthCheck: now,
-				ActorTypes: []TestDataActorType{
-					{
-						ActorType:   "type-B",
+				ActorTypes: map[string]TestDataActorType{
+					"type-B": {
 						IdleTimeout: time.Hour,
 						ActorIDs: []string{
 							"type-B.221",
@@ -111,8 +104,7 @@ func GetTestData() TestData {
 							"type-B.224",
 						},
 					},
-					{
-						ActorType:   "type.C",
+					"type.C": {
 						IdleTimeout: 30 * time.Second,
 					},
 				},
@@ -173,12 +165,12 @@ type TestData struct {
 type TestDataHost struct {
 	Address         string
 	AppID           string
+	APILevel        int
 	LastHealthCheck time.Time
-	ActorTypes      []TestDataActorType
+	ActorTypes      map[string]TestDataActorType
 }
 
 type TestDataActorType struct {
-	ActorType   string
 	IdleTimeout time.Duration
 	ActorIDs    []string
 }

@@ -27,6 +27,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 
 	"github.com/dapr/components-contrib/actorstore"
 	"github.com/dapr/components-contrib/actorstore/tests"
@@ -76,15 +78,24 @@ func TestComponent(t *testing.T) {
 
 	require.False(t, t.Failed(), "Cannot continue if 'Init' test has failed")
 
-	t.Cleanup(func() {
+	// Define cleanupFn and make sure it runs even if the tests fail
+	cleanupDone := false
+	cleanupFn := func() {
+		if cleanupDone {
+			return
+		}
+
 		log.Info("Removing tables")
 		for _, table := range []pgTable{pgTableActors, pgTableHostsActorTypes, pgTableHosts, pgTableReminders, "metadata"} {
+			log.Info("Removing table %s", store.metadata.TableName(table))
 			_, err := store.GetConn().Exec(context.Background(), fmt.Sprintf("DROP TABLE %s", store.metadata.TableName(table)))
 			if err != nil {
 				log.Errorf("Failed to remove table %s: %v", table, err)
 			}
 		}
-	})
+		cleanupDone = true
+	}
+	t.Cleanup(cleanupFn)
 
 	t.Run("Load test data", func(t *testing.T) {
 		testData := tests.GetTestData()
@@ -95,13 +106,13 @@ func TestComponent(t *testing.T) {
 		reminders := [][]any{}
 
 		for hostID, host := range testData.Hosts {
-			hosts = append(hosts, []any{hostID, host.Address, host.AppID, 10, host.LastHealthCheck})
+			hosts = append(hosts, []any{hostID, host.Address, host.AppID, host.APILevel, host.LastHealthCheck})
 
-			for _, at := range host.ActorTypes {
-				hostsActorTypes = append(hostsActorTypes, []any{hostID, at.ActorType, int(at.IdleTimeout.Seconds())})
+			for actorType, at := range host.ActorTypes {
+				hostsActorTypes = append(hostsActorTypes, []any{hostID, actorType, int(at.IdleTimeout.Seconds())})
 
 				for _, actorID := range at.ActorIDs {
-					actors = append(actors, []any{at.ActorType, actorID, hostID, int(at.IdleTimeout.Seconds())})
+					actors = append(actors, []any{actorType, actorID, hostID, int(at.IdleTimeout.Seconds())})
 				}
 			}
 		}
@@ -147,4 +158,53 @@ func TestComponent(t *testing.T) {
 	})
 
 	require.False(t, t.Failed(), "Cannot continue if 'Load test data' test has failed")
+
+	t.Run("Actor state", actorStateTests(store))
+
+	// Perform cleanup before Close test
+	cleanupFn()
+
+	t.Run("Close", func(t *testing.T) {
+		err := store.Close()
+		require.NoError(t, err)
+	})
+}
+
+func actorStateTests(store *PostgreSQL) func(t *testing.T) {
+	return func(t *testing.T) {
+		t.Run("Add new host", func(t *testing.T) {
+			before, err := store.GetAllHosts()
+			require.NoError(t, err)
+
+			// Add
+			hostID, err := store.AddActorHost(context.Background(), actorstore.AddActorHostRequest{
+				AppID:   "newapp1",
+				Address: "10.10.10.10",
+				ActorTypes: []actorstore.ActorHostType{
+					{ActorType: "newtype1", IdleTimeout: 20},
+				},
+				APILevel: 10,
+			})
+			require.NoError(t, err)
+			require.NotEmpty(t, hostID)
+
+			// Verify
+			after, err := store.GetAllHosts()
+			require.NoError(t, err)
+
+			// 50d7623f-b165-4f9e-9f05-3b7a1280b222 should have been deleted because its last healthcheck was before the interval
+			// The newly-added item should be in its place
+			expectHosts := maps.Keys(before)
+			for i, v := range expectHosts {
+				if v == "50d7623f-b165-4f9e-9f05-3b7a1280b222" {
+					expectHosts[i] = hostID
+				}
+			}
+
+			afterHosts := maps.Keys(after)
+			slices.Sort(expectHosts)
+			slices.Sort(afterHosts)
+			require.Equal(t, expectHosts, afterHosts)
+		})
+	}
 }
