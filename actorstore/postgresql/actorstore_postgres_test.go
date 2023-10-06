@@ -125,9 +125,9 @@ func loadTestData(store *PostgreSQL) func(t *testing.T) {
 }
 
 func TestComponent(t *testing.T) {
-	connString := os.Getenv("POSTGRES_CONNSTRING")
+	connString := os.Getenv("POSTGRES_ACTORSTORE_CONNSTRING")
 	if connString == "" {
-		t.Skip("Test skipped because the 'POSTGRES_CONNSTRING' is missing")
+		t.Skip("Test skipped because the 'POSTGRES_ACTORSTORE_CONNSTRING' is missing")
 	}
 
 	log := logger.NewLogger("conftests")
@@ -696,6 +696,32 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 				}, actorstore.LookupActorOpts{})
 				require.Error(t, err)
 				assert.ErrorIs(t, err, actorstore.ErrInvalidRequestMissingParameters)
+			})
+		})
+
+		t.Run("Remove actor", func(t *testing.T) {
+			t.Run("Remove existing actor", func(t *testing.T) {
+				before, err := store.GetAllHosts()
+				require.NoError(t, err)
+
+				// This actor is hosted on ded1e507-ed4a-4322-a3a4-b5e8719a9333
+				const (
+					hostID    = "ded1e507-ed4a-4322-a3a4-b5e8719a9333"
+					actorType = "type-B"
+					actorID   = "type-B.211"
+				)
+				err = store.RemoveActor(context.Background(), actorstore.ActorRef{
+					ActorType: actorType,
+					ActorID:   actorID,
+				})
+				require.NoError(t, err)
+
+				// Verify
+				after, err := store.GetAllHosts()
+				require.NoError(t, err)
+
+				require.Len(t, after[hostID].ActorTypes[actorType].ActorIDs, len(before[hostID].ActorTypes[actorType].ActorIDs)-1)
+				require.NotContains(t, after[hostID].ActorTypes[actorType].ActorIDs, actorID)
 			})
 		})
 	}

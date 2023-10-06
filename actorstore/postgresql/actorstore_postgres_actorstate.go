@@ -281,7 +281,7 @@ func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef, o
 			continue
 		} else {
 			// Return in case of other errors
-			return res, fmt.Errorf("database error: %w", err)
+			return res, fmt.Errorf("failed to lookup actor: %w", err)
 		}
 	}
 
