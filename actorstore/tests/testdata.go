@@ -17,15 +17,28 @@ package tests
 
 import (
 	"time"
+
+	"github.com/dapr/components-contrib/actorstore"
 )
 
-func GetTestPID() string {
-	return "a1b2c3d4"
-}
+var (
+	actorsConfiguration actorstore.ActorsConfiguration
+	testData            TestData
+)
 
-func GetTestData() TestData {
+const testPID = "a1b2c3d4"
+
+func init() {
 	now := time.Now()
-	return TestData{
+
+	actorsConfiguration = actorstore.ActorsConfiguration{
+		HostHealthCheckInterval:      time.Minute,
+		RemindersFetchAheadInterval:  5 * time.Second,
+		RemindersLeaseDuration:       10 * time.Second,
+		RemindersFetchAheadBatchSize: 5,
+	}
+
+	testData = TestData{
 		Hosts: map[string]TestDataHost{
 			"7de434ce-e285-444f-9857-4d30cade3111": {
 				Address:         "1.1.1.1",
@@ -80,12 +93,12 @@ func GetTestData() TestData {
 							"type-B.211",
 						},
 					},
-					"type.C": {
+					"type-C": {
 						IdleTimeout: 30 * time.Second,
 						ActorIDs: []string{
-							"type.C-11",
-							"type.C-12",
-							"type.C-13",
+							"type-C.11",
+							"type-C.12",
+							"type-C.13",
 						},
 					},
 				},
@@ -104,7 +117,7 @@ func GetTestData() TestData {
 							"type-B.224",
 						},
 					},
-					"type.C": {
+					"type-C": {
 						IdleTimeout: 30 * time.Second,
 					},
 				},
@@ -130,31 +143,49 @@ func GetTestData() TestData {
 				ExecutionTime: now.Add(5 * time.Minute),
 			},
 			"76d619d4-ccb1-4069-8c7a-19298330e1ba": {
-				ActorType:     "type-A",
-				ActorID:       "type-A.21",
-				Name:          "type-A.21.1",
+				ActorType:     "type-C",
+				ActorID:       "type-C.12",
+				Name:          "type-C.12.1",
 				ExecutionTime: now.Add(1 * time.Second),
 			},
 			"bda35196-d8bd-4426-a0a3-bc6ba6569b59": {
-				ActorType:     "type-A",
-				ActorID:       "type-A.22",
-				Name:          "type-A.22.1",
+				ActorType:     "type-B",
+				ActorID:       "type-B.221",
+				Name:          "type-B.221.1",
 				ExecutionTime: now.Add(2 * time.Second),
 			},
 			"9885b201-072b-4a0a-9e2c-25fe76ff6356": {
 				ActorType:     "type-A",
-				ActorID:       "type-A.inactive",
-				Name:          "type-A.inactive.1",
+				ActorID:       "type-A.inactivereminder",
+				Name:          "type-A.inactivereminder.1",
 				ExecutionTime: now.Add(2 * time.Second),
 			},
 			"996a0e70-f9ed-41f5-bcf2-5be53ec1a894": {
 				ActorType:     "type-A",
-				ActorID:       "type-A.inactive",
-				Name:          "type-A.inactive.2",
+				ActorID:       "type-A.inactivereminder",
+				Name:          "type-A.inactivereminder.2",
 				ExecutionTime: now.Add(3 * time.Second),
+			},
+			"2244b360-a448-4273-a2e1-bbc76791ccfa": {
+				ActorType:     "type-C",
+				ActorID:       "type-C.inactivereminder",
+				Name:          "type-C.inactivereminder.1",
+				ExecutionTime: now,
 			},
 		},
 	}
+}
+
+func GetTestPID() string {
+	return testPID
+}
+
+func GetActorsConfiguration() actorstore.ActorsConfiguration {
+	return actorsConfiguration
+}
+
+func GetTestData() TestData {
+	return testData
 }
 
 type TestData struct {
@@ -170,6 +201,10 @@ type TestDataHost struct {
 	ActorTypes      map[string]TestDataActorType
 }
 
+func (t TestDataHost) IsActive() bool {
+	return time.Since(t.LastHealthCheck) < actorsConfiguration.HostHealthCheckInterval
+}
+
 type TestDataActorType struct {
 	IdleTimeout time.Duration
 	ActorIDs    []string
@@ -183,4 +218,37 @@ type TestDataReminder struct {
 	LeaseID       *string
 	LeaseTime     *time.Time
 	LeasePID      *string
+}
+
+func (t TestData) HostsByActorType() map[string][]string {
+	res := make(map[string][]string)
+	for hostID, host := range t.Hosts {
+		for at := range host.ActorTypes {
+			if !host.IsActive() {
+				continue
+			}
+
+			if res[at] == nil {
+				res[at] = []string{hostID}
+			} else {
+				res[at] = append(res[at], hostID)
+			}
+		}
+	}
+	return res
+}
+
+func (t TestData) HostsForActorType(actorType string) []string {
+	res := make([]string, 0)
+	for hostID, host := range t.Hosts {
+		if !host.IsActive() {
+			continue
+		}
+
+		_, ok := host.ActorTypes[actorType]
+		if ok {
+			res = append(res, hostID)
+		}
+	}
+	return res
 }

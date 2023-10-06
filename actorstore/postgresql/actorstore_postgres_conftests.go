@@ -80,7 +80,7 @@ func (p *PostgreSQL) GetAllHosts() (map[string]tests.TestDataHost, error) {
 			host, ok := res[hostID]
 			if !ok {
 				// Should never happen, given that host_id has a foreign key reference to the hosts table…
-				return nil, fmt.Errorf("hosts actor types table contains data for inexisted host ID: %s", hostID)
+				return nil, fmt.Errorf("hosts actor types table contains data for non-existing host ID: %s", hostID)
 			}
 			host.ActorTypes[actorType] = tests.TestDataActorType{
 				IdleTimeout: time.Duration(idleTimeout) * time.Second,
@@ -104,6 +104,18 @@ func (p *PostgreSQL) GetAllHosts() (map[string]tests.TestDataHost, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to load data from the actors table: %w", err)
 			}
+
+			host, ok := res[hostID]
+			if !ok {
+				// Should never happen, given that host_id has a foreign key reference to the hosts table…
+				return nil, fmt.Errorf("actors table contains data for non-existing host ID: %s", hostID)
+			}
+			at, ok := host.ActorTypes[actorType]
+			if !ok {
+				// Should never happen, given that host_id has a foreign key reference to the hosts table…
+				return nil, fmt.Errorf("actors table contains data for non-existing actor type: %s", actorType)
+			}
+			at.ActorIDs = append(at.ActorIDs, actorID)
 		}
 
 		return res, nil
