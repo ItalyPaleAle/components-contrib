@@ -162,7 +162,7 @@ func TestComponent(t *testing.T) {
 
 		log.Info("Removing tables")
 		for _, table := range []pgTable{pgTableActors, pgTableHostsActorTypes, pgTableHosts, pgTableReminders, "metadata"} {
-			log.Info("Removing table %s", store.metadata.TableName(table))
+			log.Infof("Removing table %s", store.metadata.TableName(table))
 			_, err := store.GetConn().Exec(context.Background(), fmt.Sprintf("DROP TABLE %s", store.metadata.TableName(table)))
 			if err != nil {
 				log.Errorf("Failed to remove table %s: %v", table, err)
@@ -375,17 +375,15 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 					}
 
 					for k, v := range tt {
-						t.Run(k, func(t *testing.T) {
-							ref := actorstore.ActorRef{}
-							ref.ActorType, ref.ActorID, _ = strings.Cut(k, "/")
-							res, err := store.LookupActor(context.Background(), ref, actorstore.LookupActorOpts{})
-							require.NoError(t, err)
+						ref := actorstore.ActorRef{}
+						ref.ActorType, ref.ActorID, _ = strings.Cut(k, "/")
+						res, err := store.LookupActor(context.Background(), ref, actorstore.LookupActorOpts{})
+						require.NoErrorf(t, err, "Error on key %s", k)
 
-							require.Equal(t, v, res.HostID)
-							require.Equal(t, hosts[v].AppID, res.AppID)
-							require.Equal(t, hosts[v].Address, res.Address)
-							require.EqualValues(t, hosts[v].ActorTypes[ref.ActorType].IdleTimeout.Seconds(), res.IdleTimeout)
-						})
+						require.Equalf(t, v, res.HostID, "Error on key %s", k)
+						require.Equalf(t, hosts[v].AppID, res.AppID, "Error on key %s", k)
+						require.Equalf(t, hosts[v].Address, res.Address, "Error on key %s", k)
+						require.EqualValuesf(t, hosts[v].ActorTypes[ref.ActorType].IdleTimeout.Seconds(), res.IdleTimeout, "Error on key %s", k)
 					}
 				})
 
@@ -473,23 +471,21 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 					}
 
 					for k, v := range tt {
-						t.Run(k, func(t *testing.T) {
-							ref := actorstore.ActorRef{}
-							ref.ActorType, ref.ActorID, _ = strings.Cut(k, "/")
-							res, err := store.LookupActor(context.Background(), ref, lookupOpts)
+						ref := actorstore.ActorRef{}
+						ref.ActorType, ref.ActorID, _ = strings.Cut(k, "/")
+						res, err := store.LookupActor(context.Background(), ref, lookupOpts)
 
-							if slices.Contains(lookupOpts.Hosts, v) {
-								require.NoError(t, err)
+						if slices.Contains(lookupOpts.Hosts, v) {
+							require.NoErrorf(t, err, "Error on key %s", k)
 
-								require.Equal(t, v, res.HostID)
-								require.Equal(t, hosts[v].AppID, res.AppID)
-								require.Equal(t, hosts[v].Address, res.Address)
-								require.EqualValues(t, hosts[v].ActorTypes[ref.ActorType].IdleTimeout.Seconds(), res.IdleTimeout)
-							} else {
-								require.Error(t, err)
-								assert.ErrorIs(t, err, actorstore.ErrNoActorHost)
-							}
-						})
+							require.Equalf(t, v, res.HostID, "Error on key %s", k)
+							require.Equalf(t, hosts[v].AppID, res.AppID, "Error on key %s", k)
+							require.Equalf(t, hosts[v].Address, res.Address, "Error on key %s", k)
+							require.EqualValuesf(t, hosts[v].ActorTypes[ref.ActorType].IdleTimeout.Seconds(), res.IdleTimeout, "Error on key %s", k)
+						} else {
+							require.Errorf(t, err, "Error on key %s", k)
+							assert.ErrorIsf(t, err, actorstore.ErrNoActorHost, "Error on key %s", k)
+						}
 					}
 				})
 
@@ -553,117 +549,135 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 				})
 			})
 
-			t.Run("Reload test data", loadTestData(store))
-
-			t.Run("Parallel invocations", func(t *testing.T) {
-				// This is a stress test that invokes LookupActor multiple times, in parallel, also repeating some actor IDs
-				const iterationsPerActorType = 150
-				hostsByActorTypes := testData.HostsByActorType()
-				tt := make([]string, 0, (len(hostsByActorTypes)*iterationsPerActorType)+26)
-				for at := range hostsByActorTypes {
-					for j := 0; j < iterationsPerActorType; j++ {
-						// Some actor IDs will be repeated, and that's by design
-						num := mrand.Intn(iterationsPerActorType * 0.7) //nolint:gosec
-						key := fmt.Sprintf("%s/parallel-%d", at, num)
-						tt = append(tt, key)
-					}
-				}
-
-				// Add some additional actors that are already active, and some that are active on an unhealthy host
-				tt = append(tt,
-					// Active
-					"type-B/type-B.223",
-					"type-B/type-B.223",
-					"type-B/type-B.224",
-					"type-B/type-B.224",
-					"type-B/type-B.224",
-					"type-A/type-A.11",
-					"type-A/type-A.11",
-					"type-A/type-A.11",
-					"type-A/type-A.13",
-					"type-A/type-A.13",
-					"type-A/type-A.13",
-					"type-B/type-B.111",
-					"type-B/type-B.111",
-					"type-B/type-B.111",
-					// Active but on unhealthy host
-					"type-A/type-A.21",
-					"type-A/type-A.21",
-					"type-A/type-A.21",
-					"type-A/type-A.21",
-					"type-A/type-A.22",
-					"type-A/type-A.22",
-					"type-A/type-A.22",
-					"type-A/type-A.22",
-					"type-B/type-B.121",
-					"type-B/type-B.121",
-					"type-B/type-B.121",
-					"type-B/type-B.121",
-				)
-
-				// Shuffle
-				mrand.Shuffle(len(tt), func(i, j int) {
-					tt[i], tt[j] = tt[j], tt[i]
-				})
-
-				// Start the requests in parallel
-				type result struct {
-					key    string
-					err    error
-					hostID string
-				}
-				results := make(chan result)
-				for i := 0; i < len(tt); i++ {
-					go func(key string) {
-						var ref actorstore.ActorRef
-						ref.ActorType, ref.ActorID, _ = strings.Cut(key, "/")
-						lar, err := store.LookupActor(context.Background(), ref, actorstore.LookupActorOpts{})
-						res := result{
-							key: key,
+			t.Run("Parallel lookups", func(t *testing.T) {
+				testParallelLookups := func(restrictToHosts []string) func(t *testing.T) {
+					return func(t *testing.T) {
+						// This is a stress test that invokes LookupActor multiple times, in parallel, also repeating some actor IDs
+						const iterationsPerActorType = 150
+						hostsByActorTypes := testData.HostsByActorType()
+						tt := make([]string, 0, (len(hostsByActorTypes)*iterationsPerActorType)+26)
+						for at := range hostsByActorTypes {
+							for j := 0; j < iterationsPerActorType; j++ {
+								// Some actor IDs will be repeated, and that's by design
+								num := mrand.Intn(iterationsPerActorType * 0.7) //nolint:gosec
+								key := fmt.Sprintf("%s/parallel-%d", at, num)
+								tt = append(tt, key)
+							}
 						}
-						if err != nil {
-							res.err = err
-							results <- res
-							return
+
+						// Add some additional actors that are already active, and some that are active on an unhealthy host
+						tt = append(tt,
+							// Active
+							"type-B/type-B.223",
+							"type-B/type-B.223",
+							"type-B/type-B.224",
+							"type-B/type-B.224",
+							"type-B/type-B.224",
+							"type-A/type-A.11",
+							"type-A/type-A.11",
+							"type-A/type-A.11",
+							"type-A/type-A.13",
+							"type-A/type-A.13",
+							"type-A/type-A.13",
+							"type-B/type-B.111",
+							"type-B/type-B.111",
+							"type-B/type-B.111",
+							// Active but on unhealthy host
+							"type-A/type-A.21",
+							"type-A/type-A.21",
+							"type-A/type-A.21",
+							"type-A/type-A.21",
+							"type-A/type-A.22",
+							"type-A/type-A.22",
+							"type-A/type-A.22",
+							"type-A/type-A.22",
+							"type-B/type-B.121",
+							"type-B/type-B.121",
+							"type-B/type-B.121",
+							"type-B/type-B.121",
+						)
+
+						// Shuffle
+						mrand.Shuffle(len(tt), func(i, j int) {
+							tt[i], tt[j] = tt[j], tt[i]
+						})
+
+						// Set lookup options
+						lookupOpts := actorstore.LookupActorOpts{
+							Hosts: restrictToHosts,
 						}
-						res.hostID = lar.HostID
-						results <- res
-					}(tt[i])
+
+						// Start the requests in parallel
+						type result struct {
+							key    string
+							err    error
+							hostID string
+						}
+						results := make(chan result)
+						for i := 0; i < len(tt); i++ {
+							go func(key string) {
+								var ref actorstore.ActorRef
+								ref.ActorType, ref.ActorID, _ = strings.Cut(key, "/")
+								lar, err := store.LookupActor(context.Background(), ref, lookupOpts)
+								res := result{
+									key: key,
+								}
+								if err != nil {
+									res.err = err
+									results <- res
+									return
+								}
+								res.hostID = lar.HostID
+								results <- res
+							}(tt[i])
+						}
+
+						// Read the results
+						collectedHostIDs := make(map[string]string, int(float64(len(tt))*0.9))
+						collected := make([]string, len(tt))
+						for i := 0; i < len(tt); i++ {
+							res := <-results
+							if !assert.NoErrorf(t, res.err, "Error returned for key %s", res.key) {
+								continue
+							}
+
+							collected[i] = res.key
+							if collectedHostIDs[res.key] != "" {
+								assert.Equalf(t, res.hostID, collectedHostIDs[res.key], "Unexpected response for key %s", res.key)
+							} else {
+								collectedHostIDs[res.key] = res.hostID
+							}
+
+							if len(restrictToHosts) > 0 {
+								assert.Containsf(t, restrictToHosts, res.hostID, "Response for key %s was a restricted host", res.key)
+							}
+						}
+
+						// Ensure we have a response for all requests
+						slices.Sort(collected)
+						slices.Sort(tt)
+						assert.Equal(t, tt, collected)
+
+						// Check that certain known actors have expected values
+						// These actors were already active on a healthy host
+						assert.Equal(t, "f4c7d514-3468-48dd-9103-297bf7fe91fd", collectedHostIDs["type-B/type-B.223"])
+						assert.Equal(t, "f4c7d514-3468-48dd-9103-297bf7fe91fd", collectedHostIDs["type-B/type-B.224"])
+						assert.Equal(t, "7de434ce-e285-444f-9857-4d30cade3111", collectedHostIDs["type-A/type-A.11"])
+						assert.Equal(t, "7de434ce-e285-444f-9857-4d30cade3111", collectedHostIDs["type-A/type-A.13"])
+						assert.Equal(t, "7de434ce-e285-444f-9857-4d30cade3111", collectedHostIDs["type-B/type-B.111"])
+						// These actors were already active, but on an unhealthy host
+						assert.NotEqual(t, "50d7623f-b165-4f9e-9f05-3b7a1280b222", collectedHostIDs["type-A/type-A.21"])
+						assert.NotEqual(t, "50d7623f-b165-4f9e-9f05-3b7a1280b222", collectedHostIDs["type-A/type-A.22"])
+						assert.NotEqual(t, "50d7623f-b165-4f9e-9f05-3b7a1280b222", collectedHostIDs["type-B/type-B.121"])
+					}
 				}
 
-				// Read the results
-				collectedHostIDs := make(map[string]string, int(float64(len(tt))*0.9))
-				collected := make([]string, len(tt))
-				for i := 0; i < len(tt); i++ {
-					res := <-results
-					if !assert.NoErrorf(t, res.err, "Error returned for key %s", res.key) {
-						continue
-					}
+				// Reload test data before any run
+				loadTestData(store)(t)
+				t.Run("Test without host restrictions", testParallelLookups(nil))
 
-					collected[i] = res.key
-					if collectedHostIDs[res.key] != "" {
-						assert.Equal(t, res.hostID, collectedHostIDs[res.key])
-					} else {
-						collectedHostIDs[res.key] = res.hostID
-					}
-				}
-
-				// Ensure we have a response for all requests
-				slices.Sort(collected)
-				slices.Sort(tt)
-				assert.Equal(t, tt, collected)
-
-				// Check that certain known actors have expected values
-				// These actors were already active on a healthy host
-				assert.Equal(t, "f4c7d514-3468-48dd-9103-297bf7fe91fd", collectedHostIDs["type-B/type-B.223"])
-				assert.Equal(t, "f4c7d514-3468-48dd-9103-297bf7fe91fd", collectedHostIDs["type-B/type-B.224"])
-				assert.Equal(t, "7de434ce-e285-444f-9857-4d30cade3111", collectedHostIDs["type-A/type-A.11"])
-				assert.Equal(t, "7de434ce-e285-444f-9857-4d30cade3111", collectedHostIDs["type-A/type-A.13"])
-				assert.Equal(t, "7de434ce-e285-444f-9857-4d30cade3111", collectedHostIDs["type-B/type-B.111"])
-				// These actors were already active, but on an unhealthy host
-				assert.NotEqual(t, "50d7623f-b165-4f9e-9f05-3b7a1280b222", collectedHostIDs["type-A/type-A.21"])
-				assert.NotEqual(t, "50d7623f-b165-4f9e-9f05-3b7a1280b222", collectedHostIDs["type-A/type-A.22"])
-				assert.NotEqual(t, "50d7623f-b165-4f9e-9f05-3b7a1280b222", collectedHostIDs["type-B/type-B.121"])
+				loadTestData(store)(t)
+				t.Run("Test with host restrictions", testParallelLookups([]string{"f4c7d514-3468-48dd-9103-297bf7fe91fd", "7de434ce-e285-444f-9857-4d30cade3111"}))
 			})
 
 			t.Run("Error when actor type is empty", func(t *testing.T) {

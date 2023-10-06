@@ -273,7 +273,7 @@ func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef, o
 		// This could make the entire method slower when an actor isn't found, but that's an error case and it shouldn't bother us much anyways
 		if errors.Is(err, pgx.ErrNoRows) {
 			select {
-			case <-time.After(20 * time.Millisecond):
+			case <-time.After(10 * time.Millisecond):
 				// nop
 			case <-ctx.Done():
 				return res, ctx.Err()
