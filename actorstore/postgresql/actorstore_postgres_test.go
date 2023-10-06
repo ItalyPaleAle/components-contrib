@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	mrand "math/rand"
 	"os"
 	"strings"
 	"testing"
@@ -169,6 +170,7 @@ func TestComponent(t *testing.T) {
 
 func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 	return func(t *testing.T) {
+		testData := tests.GetTestData()
 		var addedHostID string
 
 		t.Run("Add new host", func(t *testing.T) {
@@ -336,67 +338,267 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 		})
 
 		t.Run("Lookup actor", func(t *testing.T) {
-			testData := tests.GetTestData()
 			hosts, err := store.GetAllHosts()
 			require.NoError(t, err)
 
-			t.Run("Active actor, no options", func(t *testing.T) {
-				// Test vectors: key is "actor-type/actor-id" and value is expected host ID
-				tt := map[string]string{
-					"type-B/type-B.211": "ded1e507-ed4a-4322-a3a4-b5e8719a9333",
-					"type-C/type-C.12":  "ded1e507-ed4a-4322-a3a4-b5e8719a9333",
-					"type-B/type-B.222": "f4c7d514-3468-48dd-9103-297bf7fe91fd",
-					"type-A/type-A.11":  "7de434ce-e285-444f-9857-4d30cade3111",
-					"type-A/type-A.12":  "7de434ce-e285-444f-9857-4d30cade3111",
-					"type-B/type-B.112": "7de434ce-e285-444f-9857-4d30cade3111",
-				}
+			t.Run("No host limit", func(t *testing.T) {
+				t.Run("Active actor", func(t *testing.T) {
+					// Test vectors: key is "actor-type/actor-id" and value is expected host ID
+					tt := map[string]string{
+						"type-B/type-B.211": "ded1e507-ed4a-4322-a3a4-b5e8719a9333",
+						"type-C/type-C.12":  "ded1e507-ed4a-4322-a3a4-b5e8719a9333",
+						"type-B/type-B.222": "f4c7d514-3468-48dd-9103-297bf7fe91fd",
+						"type-A/type-A.11":  "7de434ce-e285-444f-9857-4d30cade3111",
+						"type-A/type-A.12":  "7de434ce-e285-444f-9857-4d30cade3111",
+						"type-B/type-B.112": "7de434ce-e285-444f-9857-4d30cade3111",
+					}
 
-				for k, v := range tt {
-					t.Run(k, func(t *testing.T) {
-						ref := actorstore.ActorRef{}
-						ref.ActorType, ref.ActorID, _ = strings.Cut(k, "/")
-						res, err := store.LookupActor(context.Background(), ref, actorstore.LookupActorOpts{})
-						require.NoError(t, err)
+					for k, v := range tt {
+						t.Run(k, func(t *testing.T) {
+							ref := actorstore.ActorRef{}
+							ref.ActorType, ref.ActorID, _ = strings.Cut(k, "/")
+							res, err := store.LookupActor(context.Background(), ref, actorstore.LookupActorOpts{})
+							require.NoError(t, err)
 
-						require.Equal(t, v, res.HostID)
-						require.Equal(t, hosts[v].AppID, res.AppID)
-						require.Equal(t, hosts[v].Address, res.Address)
-						require.EqualValues(t, hosts[v].ActorTypes[ref.ActorType].IdleTimeout.Seconds(), res.IdleTimeout)
-					})
-				}
+							require.Equal(t, v, res.HostID)
+							require.Equal(t, hosts[v].AppID, res.AppID)
+							require.Equal(t, hosts[v].Address, res.Address)
+							require.EqualValues(t, hosts[v].ActorTypes[ref.ActorType].IdleTimeout.Seconds(), res.IdleTimeout)
+						})
+					}
+				})
+
+				t.Run("Inactive actor", func(t *testing.T) {
+					const iterationsPerActorType = 50
+					for at, atHosts := range testData.HostsByActorType() {
+						t.Run(at, func(t *testing.T) {
+							counts := map[string]int{}
+							for _, host := range atHosts {
+								counts[host] = 0
+							}
+
+							for i := 0; i < iterationsPerActorType; i++ {
+								res, err := store.LookupActor(context.Background(), actorstore.ActorRef{
+									ActorType: at,
+									ActorID:   fmt.Sprintf("inactive-%d", i),
+								}, actorstore.LookupActorOpts{})
+								require.NoErrorf(t, err, "Failed on iteration %s/%d", at, i)
+
+								require.Containsf(t, atHosts, res.HostID, "Failed on iteration %s/%d", at, i)
+								require.Equalf(t, hosts[res.HostID].AppID, res.AppID, "Failed on iteration %s/%d", at, i)
+								require.Equalf(t, hosts[res.HostID].Address, res.Address, "Failed on iteration %s/%d", at, i)
+								require.EqualValuesf(t, hosts[res.HostID].ActorTypes[at].IdleTimeout.Seconds(), res.IdleTimeout, "Failed on iteration %s/%d", at, i)
+
+								counts[res.HostID]++
+							}
+
+							// Ideally we'd have a perfectly uniform distribution of actors across all hosts
+							// But this isn't always the case, so we will only assert that at least 1/3rd of what would be uniform is assigned to each host
+							for host, count := range counts {
+								min := (iterationsPerActorType / len(counts)) / 3
+								if min < 1 {
+									min = 1
+								}
+								assert.GreaterOrEqualf(t, count, min, "Failed on host %s", host)
+							}
+						})
+					}
+				})
+
+				t.Run("No host for actor type", func(t *testing.T) {
+					_, err := store.LookupActor(context.Background(), actorstore.ActorRef{
+						ActorType: "not-supported",
+						ActorID:   "1",
+					}, actorstore.LookupActorOpts{})
+					require.Error(t, err)
+					assert.ErrorIs(t, err, actorstore.ErrNoActorHost)
+				})
 			})
 
-			t.Run("Inactive actor, no options", func(t *testing.T) {
-				const iterationsPerActorType = 50
-				for at, atHosts := range testData.HostsByActorType() {
-					t.Run(at, func(t *testing.T) {
-						counts := map[string]int{}
-						for _, host := range atHosts {
-							counts[host] = 0
-						}
-
-						for i := 0; i < iterationsPerActorType; i++ {
-							res, err := store.LookupActor(context.Background(), actorstore.ActorRef{
-								ActorType: at,
-								ActorID:   fmt.Sprintf("inactive-%d", i),
-							}, actorstore.LookupActorOpts{})
-							require.NoErrorf(t, err, "Failed on iteration %s/%d", at, i)
-
-							require.Containsf(t, atHosts, res.HostID, "Failed on iteration %s/%d", at, i)
-							require.Equalf(t, hosts[res.HostID].AppID, res.AppID, "Failed on iteration %s/%d", at, i)
-							require.Equalf(t, hosts[res.HostID].Address, res.Address, "Failed on iteration %s/%d", at, i)
-							require.EqualValuesf(t, hosts[res.HostID].ActorTypes[at].IdleTimeout.Seconds(), res.IdleTimeout, "Failed on iteration %s/%d", at, i)
-
-							counts[res.HostID]++
-						}
-
-						// Ideally we'd have a perfectly uniform distribution of actors across all hosts
-						// But this isn't always the case, so we will only assert that at least 1/10th of iterationsPerActorType is assigned to each host
-						for _, host := range atHosts {
-							assert.GreaterOrEqualf(t, counts[host], iterationsPerActorType/10, "Failed on host %s", host)
-						}
-					})
+			t.Run("With host limit", func(t *testing.T) {
+				lookupOpts := actorstore.LookupActorOpts{
+					Hosts: []string{
+						// Limit lookups to these two hosts
+						// These can hosts actors of type type-B and type-C only
+						"ded1e507-ed4a-4322-a3a4-b5e8719a9333",
+						"f4c7d514-3468-48dd-9103-297bf7fe91fd",
+					},
 				}
+
+				t.Run("Active actor", func(t *testing.T) {
+					// Test vectors: key is "actor-type/actor-id" and value is expected host ID
+					tt := map[string]string{
+						"type-B/type-B.211": "ded1e507-ed4a-4322-a3a4-b5e8719a9333",
+						"type-C/type-C.12":  "ded1e507-ed4a-4322-a3a4-b5e8719a9333",
+						"type-B/type-B.222": "f4c7d514-3468-48dd-9103-297bf7fe91fd",
+						"type-A/type-A.11":  "7de434ce-e285-444f-9857-4d30cade3111",
+						"type-A/type-A.12":  "7de434ce-e285-444f-9857-4d30cade3111",
+						"type-B/type-B.112": "7de434ce-e285-444f-9857-4d30cade3111",
+					}
+
+					for k, v := range tt {
+						t.Run(k, func(t *testing.T) {
+							ref := actorstore.ActorRef{}
+							ref.ActorType, ref.ActorID, _ = strings.Cut(k, "/")
+							res, err := store.LookupActor(context.Background(), ref, lookupOpts)
+
+							if slices.Contains(lookupOpts.Hosts, v) {
+								require.NoError(t, err)
+
+								require.Equal(t, v, res.HostID)
+								require.Equal(t, hosts[v].AppID, res.AppID)
+								require.Equal(t, hosts[v].Address, res.Address)
+								require.EqualValues(t, hosts[v].ActorTypes[ref.ActorType].IdleTimeout.Seconds(), res.IdleTimeout)
+							} else {
+								require.Error(t, err)
+								assert.ErrorIs(t, err, actorstore.ErrNoActorHost)
+							}
+						})
+					}
+				})
+
+				t.Run("Inactive actor", func(t *testing.T) {
+					const iterationsPerActorType = 50
+					for at, atHosts := range testData.HostsByActorType() {
+						t.Run(at, func(t *testing.T) {
+							counts := map[string]int{}
+							for _, host := range atHosts {
+								if slices.Contains(lookupOpts.Hosts, host) {
+									counts[host] = 0
+								}
+							}
+
+							expectErr := len(counts) == 0
+
+							for i := 0; i < iterationsPerActorType; i++ {
+								res, err := store.LookupActor(context.Background(), actorstore.ActorRef{
+									ActorType: at,
+									ActorID:   fmt.Sprintf("inactive-opts-%d", i),
+								}, lookupOpts)
+
+								if expectErr {
+									require.Errorf(t, err, "Failed on iteration %s/%d", at, i)
+									assert.ErrorIsf(t, err, actorstore.ErrNoActorHost, "Failed on iteration %s/%d", at, i)
+								} else {
+									require.NoErrorf(t, err, "Failed on iteration %s/%d", at, i)
+
+									require.Containsf(t, atHosts, res.HostID, "Failed on iteration %s/%d", at, i)
+									require.Containsf(t, lookupOpts.Hosts, res.HostID, "Failed on iteration %s/%d", at, i)
+									require.Equalf(t, hosts[res.HostID].AppID, res.AppID, "Failed on iteration %s/%d", at, i)
+									require.Equalf(t, hosts[res.HostID].Address, res.Address, "Failed on iteration %s/%d", at, i)
+									require.EqualValuesf(t, hosts[res.HostID].ActorTypes[at].IdleTimeout.Seconds(), res.IdleTimeout, "Failed on iteration %s/%d", at, i)
+
+									counts[res.HostID]++
+								}
+							}
+
+							if !expectErr {
+								// Ideally we'd have a perfectly uniform distribution of actors across all hosts
+								// But this isn't always the case, so we will only assert that at least 1/3rd of what would be uniform is assigned to each host
+								for host, count := range counts {
+									min := (iterationsPerActorType / len(counts)) / 3
+									if min < 1 {
+										min = 1
+									}
+									assert.GreaterOrEqualf(t, count, min, "Failed on host %s", host)
+								}
+							}
+						})
+					}
+				})
+
+				t.Run("No host for actor type", func(t *testing.T) {
+					_, err := store.LookupActor(context.Background(), actorstore.ActorRef{
+						ActorType: "not-supported",
+						ActorID:   "1",
+					}, actorstore.LookupActorOpts{})
+					require.Error(t, err)
+					assert.ErrorIs(t, err, actorstore.ErrNoActorHost)
+				})
+			})
+
+			t.Run("Parallel invocations", func(t *testing.T) {
+				// This is a stress test that invokes LookupActor multiple times, in parallel, also repeating some actor IDs
+				const iterationsPerActorType = 150
+				hostsByActorTypes := testData.HostsByActorType()
+				tt := make([]string, len(hostsByActorTypes)*iterationsPerActorType)
+				i := 0
+				for at := range hostsByActorTypes {
+					for j := 0; j < iterationsPerActorType; j++ {
+						// Some actor IDs will be repeated, and that's by design
+						num := mrand.Intn(iterationsPerActorType * 0.7) //nolint:gosec
+						key := fmt.Sprintf("%s/parallel-%d", at, num)
+						tt[(i*iterationsPerActorType)+j] = key
+					}
+					i++
+				}
+
+				// Start the requests in parallel
+				type result struct {
+					key     string
+					err     error
+					address string
+				}
+				results := make(chan result)
+				for i := 0; i < len(tt); i++ {
+					go func(key string) {
+						var ref actorstore.ActorRef
+						ref.ActorType, ref.ActorID, _ = strings.Cut(key, "/")
+						lar, err := store.LookupActor(context.Background(), ref, actorstore.LookupActorOpts{})
+						res := result{
+							key: key,
+						}
+						if err != nil {
+							res.err = err
+							results <- res
+							return
+						}
+						res.address = lar.Address
+						results <- res
+					}(tt[i])
+				}
+
+				// Read the results
+				collectedAddresses := make(map[string]string, int(float64(len(tt))*0.9))
+				collected := make([]string, len(tt))
+				for i := 0; i < len(tt); i++ {
+					res := <-results
+					if !assert.NoErrorf(t, res.err, "Error returned for key %s", res.key) {
+						continue
+					}
+
+					collected[i] = res.key
+					if collectedAddresses[res.key] != "" {
+						fmt.Println("Dupl", res.key, collectedAddresses[res.key], res.address)
+						assert.Equal(t, res.address, collectedAddresses[res.key])
+					} else {
+						fmt.Println("New", res.key, res.address)
+						collectedAddresses[res.key] = res.address
+					}
+				}
+
+				// Ensure we have a response for all requests
+				slices.Sort(collected)
+				slices.Sort(tt)
+				assert.Equal(t, tt, collected)
+			})
+
+			t.Run("Error when actor type is empty", func(t *testing.T) {
+				_, err := store.LookupActor(context.Background(), actorstore.ActorRef{
+					ActorType: "",
+					ActorID:   "id",
+				}, actorstore.LookupActorOpts{})
+				require.Error(t, err)
+				assert.ErrorIs(t, err, actorstore.ErrInvalidRequestMissingParameters)
+			})
+
+			t.Run("Error when actor ID is empty", func(t *testing.T) {
+				_, err := store.LookupActor(context.Background(), actorstore.ActorRef{
+					ActorType: "type",
+					ActorID:   "",
+				}, actorstore.LookupActorOpts{})
+				require.Error(t, err)
+				assert.ErrorIs(t, err, actorstore.ErrInvalidRequestMissingParameters)
 			})
 		})
 	}
