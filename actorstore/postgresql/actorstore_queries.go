@@ -81,7 +81,7 @@ CREATE INDEX ON %[1]s (reminder_lease_pid);
 // In both cases, the query lookups up the actor host's ID, and then returns the actor host's address and app ID, and the idle timeout configured for the actor type
 //
 // Note that in case of 2 requests at the same time when the row doesn't exist, this may fail with a race condition.
-// You will get a unique constraint violation. The query can be retried in that case.
+// You will get an empty result. The query can be retried in that case.
 //
 // Query arguments:
 // 1. Actor type, as `string`
@@ -94,6 +94,7 @@ CREATE INDEX ON %[1]s (reminder_lease_pid);
 // 3. Name of the "actors" table
 //
 // Inspired by: https://stackoverflow.com/a/72033548/192024
+// The additional "WHERE" in the "ON CONFLICT" clause is to prevent race conditions with other callers executing the same INSERT ... ON CONFLICT DO UPDATE at the same time
 const lookupActorQuery = `WITH new_row AS (
   INSERT INTO %[3]s (actor_type, actor_id, host_id, actor_idle_timeout, actor_activation)
     SELECT $1, $2, %[2]s.host_id, %[2]s.actor_idle_timeout, CURRENT_TIMESTAMP
@@ -115,6 +116,14 @@ const lookupActorQuery = `WITH new_row AS (
     ON CONFLICT (actor_type, actor_id) DO UPDATE
       SET
         host_id = EXCLUDED.host_id, actor_idle_timeout = EXCLUDED.actor_idle_timeout, actor_activation = EXCLUDED.actor_activation
+      WHERE
+        EXISTS (
+          SELECT 1
+            FROM %[1]s
+            WHERE
+              %[3]s.host_id = %[1]s.host_id
+              AND %[1]s.host_last_healthcheck < CURRENT_TIMESTAMP - $3::interval
+        )
     RETURNING host_id, actor_idle_timeout
 )
 (
@@ -161,6 +170,14 @@ const lookupActorQueryWithHostRestriction = `WITH new_row AS (
     ON CONFLICT (actor_type, actor_id) DO UPDATE
       SET
         host_id = EXCLUDED.host_id, actor_idle_timeout = EXCLUDED.actor_idle_timeout, actor_activation = EXCLUDED.actor_activation
+      WHERE
+        EXISTS (
+          SELECT 1
+            FROM %[1]s
+            WHERE
+              %[3]s.host_id = %[1]s.host_id
+              AND %[1]s.host_last_healthcheck < CURRENT_TIMESTAMP - $3::interval
+        )
     RETURNING host_id, actor_idle_timeout
 )
 (

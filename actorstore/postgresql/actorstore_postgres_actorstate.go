@@ -254,8 +254,8 @@ func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef, o
 		args = []any{ref.ActorType, ref.ActorID, p.metadata.Config.FailedInterval(), opts.Hosts}
 	}
 
-	// This query could fail if there's a race condition where the same actor is being invoked multiple times and it doesn't exist already
-	// So, let's implement a retry in case of conflicts
+	// This query could fail with no rows there's a race condition where the same actor is being invoked multiple times and it doesn't exist already (on an active host)
+	// So, let's implement a retry in case of actors not found, up to 3 times
 	for i := 0; i < 3; i++ {
 		queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 		defer queryCancel()
@@ -266,26 +266,28 @@ func (p *PostgreSQL) LookupActor(ctx context.Context, ref actorstore.ActorRef, o
 
 		if err == nil {
 			break
+		}
+
+		// If we got no rows, it's possible that we had a race condition where we were trying to create the same actor that didn't exist twice
+		// In this case, we will retry after a very short delay if we didn't find an actor
+		// This could make the entire method slower when an actor isn't found, but that's an error case and it shouldn't bother us much anyways
+		if errors.Is(err, pgx.ErrNoRows) {
+			select {
+			case <-time.After(25 * time.Millisecond):
+				// nop
+			case <-ctx.Done():
+				return res, ctx.Err()
+			}
+			continue
 		} else {
-			// If we got no rows, it means that we don't have a host that supports actors of the given type
-			if errors.Is(err, pgx.ErrNoRows) {
-				return res, actorstore.ErrNoActorHost
-			}
-
-			// Retry if the error is the violation of a unique constraint
-			if isUniqueViolationError(err) {
-				select {
-				case <-time.After(50 * time.Millisecond):
-					// nop
-				case <-ctx.Done():
-					return res, ctx.Err()
-				}
-				continue
-			}
-
 			// Return in case of other errors
 			return res, fmt.Errorf("database error: %w", err)
 		}
+	}
+
+	// If we're here and we still have an error, it means that we don't have a host that supports actors of the given type
+	if err != nil && errors.Is(err, pgx.ErrNoRows) {
+		return res, actorstore.ErrNoActorHost
 	}
 
 	return res, nil
