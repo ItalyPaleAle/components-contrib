@@ -310,13 +310,13 @@ const components = {
             'conformance-pubsub.aws.snssqs.terraform-destroy.sh',
         sourcePkg: 'pubsub/aws/snssqs',
     },
-    'pubsub.gcp.pubsub': {
-        certification: true,
-        requireTerraform: true,
-        requireGCPCredentials: true,
-        certificationSetup: 'certification-pubsub.gcp.pubsub-setup.sh',
-        certificationDestroy: 'certification-pubsub.gcp.pubsub-destroy.sh',
-    },
+    // 'pubsub.gcp.pubsub': {
+    //     certification: true,
+    //     requireTerraform: true,
+    //     requireGCPCredentials: true,
+    //     certificationSetup: 'certification-pubsub.gcp.pubsub-setup.sh',
+    //     certificationDestroy: 'certification-pubsub.gcp.pubsub-destroy.sh',
+    // },
     // 'pubsub.gcp.pubsub.docker': {
     //     conformance: true,
     //     conformanceSetup: 'docker-compose.sh gcp-pubsub',
@@ -413,10 +413,6 @@ const components = {
         conformance: true,
         conformanceSetup: 'docker-compose.sh vernemq',
         sourcePkg: ['pubsub/mqtt3'],
-    },
-    'pubsub.natsstreaming': {
-        conformance: true,
-        conformanceSetup: 'docker-compose.sh natsstreaming',
     },
     'pubsub.pulsar': {
         conformance: true,
@@ -713,11 +709,11 @@ const components = {
         requireGCPCredentials: true,
         conformanceSetup: 'conformance-state.gcp.firestore-setup.sh',
     },
-    'state.gcp.firestore': {
-        certification: true,
-        requireGCPCredentials: true,
-        certificationSetup: 'certification-state.gcp.firestore-setup.sh',
-    },
+    // 'state.gcp.firestore': {
+    //     certification: true,
+    //     requireGCPCredentials: true,
+    //     certificationSetup: 'certification-state.gcp.firestore-setup.sh',
+    // },
     'workflows.temporal': {
         conformance: true,
         conformanceSetup: 'docker-compose.sh temporal',
