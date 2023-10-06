@@ -116,6 +116,7 @@ func (p *PostgreSQL) GetAllHosts() (map[string]tests.TestDataHost, error) {
 				return nil, fmt.Errorf("actors table contains data for non-existing actor type: %s", actorType)
 			}
 			at.ActorIDs = append(at.ActorIDs, actorID)
+			host.ActorTypes[actorType] = at
 		}
 
 		return res, nil

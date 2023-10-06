@@ -569,10 +569,8 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 
 					collected[i] = res.key
 					if collectedAddresses[res.key] != "" {
-						fmt.Println("Dupl", res.key, collectedAddresses[res.key], res.address)
 						assert.Equal(t, res.address, collectedAddresses[res.key])
 					} else {
-						fmt.Println("New", res.key, res.address)
 						collectedAddresses[res.key] = res.address
 					}
 				}
