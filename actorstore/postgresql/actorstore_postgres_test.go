@@ -47,6 +47,83 @@ func generateTablePrefix(t *testing.T) string {
 	return "conftests_" + hex.EncodeToString(b) + "_"
 }
 
+func loadTestData(store *PostgreSQL) func(t *testing.T) {
+	return func(t *testing.T) {
+		t.Helper()
+
+		testData := tests.GetTestData()
+
+		hosts := [][]any{}
+		hostsActorTypes := [][]any{}
+		actors := [][]any{}
+		reminders := [][]any{}
+
+		for hostID, host := range testData.Hosts {
+			hosts = append(hosts, []any{hostID, host.Address, host.AppID, host.APILevel, host.LastHealthCheck})
+
+			for actorType, at := range host.ActorTypes {
+				hostsActorTypes = append(hostsActorTypes, []any{hostID, actorType, int(at.IdleTimeout.Seconds())})
+
+				for _, actorID := range at.ActorIDs {
+					actors = append(actors, []any{actorType, actorID, hostID, int(at.IdleTimeout.Seconds())})
+				}
+			}
+		}
+
+		for reminderID, reminder := range testData.Reminders {
+			reminders = append(reminders, []any{
+				reminderID, reminder.ActorType, reminder.ActorID, reminder.Name,
+				reminder.ExecutionTime, reminder.LeaseID, reminder.LeaseTime, reminder.LeasePID,
+			})
+		}
+
+		// Clean the tables first
+		// Note that the hosts actor types and actors table use foreign keys, so deleting hosts is enough to clean those too
+		_, err := store.GetConn().Exec(
+			context.Background(),
+			"DELETE FROM "+store.metadata.TableName(pgTableHosts),
+		)
+		require.NoError(t, err, "Failed to clean the hosts table")
+		_, err = store.GetConn().Exec(
+			context.Background(),
+			"DELETE FROM "+store.metadata.TableName(pgTableReminders),
+		)
+		require.NoError(t, err, "Failed to clean the reminders table")
+
+		_, err = store.GetConn().CopyFrom(
+			context.Background(),
+			pgx.Identifier{store.metadata.TableName(pgTableHosts)},
+			[]string{"host_id", "host_address", "host_app_id", "host_actors_api_level", "host_last_healthcheck"},
+			pgx.CopyFromRows(hosts),
+		)
+		require.NoError(t, err, "Failed to load test data for hosts table")
+
+		_, err = store.GetConn().CopyFrom(
+			context.Background(),
+			pgx.Identifier{store.metadata.TableName(pgTableHostsActorTypes)},
+			[]string{"host_id", "actor_type", "actor_idle_timeout"},
+			pgx.CopyFromRows(hostsActorTypes),
+		)
+		require.NoError(t, err, "Failed to load test data for hosts actor types table")
+
+		_, err = store.GetConn().CopyFrom(
+			context.Background(),
+			pgx.Identifier{store.metadata.TableName(pgTableActors)},
+			[]string{"actor_type", "actor_id", "host_id", "actor_idle_timeout"},
+			pgx.CopyFromRows(actors),
+		)
+		require.NoError(t, err, "Failed to load test data for actors table")
+
+		_, err = store.GetConn().CopyFrom(
+			context.Background(),
+			pgx.Identifier{store.metadata.TableName(pgTableReminders)},
+			[]string{"reminder_id", "actor_type", "actor_id", "reminder_name", "reminder_execution_time", "reminder_lease_id", "reminder_lease_time", "reminder_lease_pid"},
+			pgx.CopyFromRows(reminders),
+		)
+		require.NoError(t, err, "Failed to load test data for reminders table")
+	}
+}
+
 func TestComponent(t *testing.T) {
 	connString := os.Getenv("POSTGRES_CONNSTRING")
 	if connString == "" {
@@ -95,65 +172,7 @@ func TestComponent(t *testing.T) {
 	}
 	t.Cleanup(cleanupFn)
 
-	t.Run("Load test data", func(t *testing.T) {
-		testData := tests.GetTestData()
-
-		hosts := [][]any{}
-		hostsActorTypes := [][]any{}
-		actors := [][]any{}
-		reminders := [][]any{}
-
-		for hostID, host := range testData.Hosts {
-			hosts = append(hosts, []any{hostID, host.Address, host.AppID, host.APILevel, host.LastHealthCheck})
-
-			for actorType, at := range host.ActorTypes {
-				hostsActorTypes = append(hostsActorTypes, []any{hostID, actorType, int(at.IdleTimeout.Seconds())})
-
-				for _, actorID := range at.ActorIDs {
-					actors = append(actors, []any{actorType, actorID, hostID, int(at.IdleTimeout.Seconds())})
-				}
-			}
-		}
-
-		for reminderID, reminder := range testData.Reminders {
-			reminders = append(reminders, []any{
-				reminderID, reminder.ActorType, reminder.ActorID, reminder.Name,
-				reminder.ExecutionTime, reminder.LeaseID, reminder.LeaseTime, reminder.LeasePID,
-			})
-		}
-
-		_, err := store.GetConn().CopyFrom(
-			context.Background(),
-			pgx.Identifier{store.metadata.TableName(pgTableHosts)},
-			[]string{"host_id", "host_address", "host_app_id", "host_actors_api_level", "host_last_healthcheck"},
-			pgx.CopyFromRows(hosts),
-		)
-		require.NoError(t, err, "Failed to load test data for hosts table")
-
-		_, err = store.GetConn().CopyFrom(
-			context.Background(),
-			pgx.Identifier{store.metadata.TableName(pgTableHostsActorTypes)},
-			[]string{"host_id", "actor_type", "actor_idle_timeout"},
-			pgx.CopyFromRows(hostsActorTypes),
-		)
-		require.NoError(t, err, "Failed to load test data for hosts actor types table")
-
-		_, err = store.GetConn().CopyFrom(
-			context.Background(),
-			pgx.Identifier{store.metadata.TableName(pgTableActors)},
-			[]string{"actor_type", "actor_id", "host_id", "actor_idle_timeout"},
-			pgx.CopyFromRows(actors),
-		)
-		require.NoError(t, err, "Failed to load test data for actors table")
-
-		_, err = store.GetConn().CopyFrom(
-			context.Background(),
-			pgx.Identifier{store.metadata.TableName(pgTableReminders)},
-			[]string{"reminder_id", "actor_type", "actor_id", "reminder_name", "reminder_execution_time", "reminder_lease_id", "reminder_lease_time", "reminder_lease_pid"},
-			pgx.CopyFromRows(reminders),
-		)
-		require.NoError(t, err, "Failed to load test data for reminders table")
-	})
+	t.Run("Load test data", loadTestData(store))
 
 	require.False(t, t.Failed(), "Cannot continue if 'Load test data' test has failed")
 
@@ -342,6 +361,8 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Run("No host limit", func(t *testing.T) {
+				t.Run("Reload test data", loadTestData(store))
+
 				t.Run("Active actor", func(t *testing.T) {
 					// Test vectors: key is "actor-type/actor-id" and value is expected host ID
 					tt := map[string]string{
@@ -402,6 +423,21 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 								assert.GreaterOrEqualf(t, count, min, "Failed on host %s", host)
 							}
 						})
+					}
+				})
+
+				t.Run("Actor is active on unhealthy host", func(t *testing.T) {
+					// Host 50d7623f-b165-4f9e-9f05-3b7a1280b222 is inactive
+					actorTypes := testData.Hosts["50d7623f-b165-4f9e-9f05-3b7a1280b222"].ActorTypes
+					for actorType, v := range actorTypes {
+						for _, actorID := range v.ActorIDs {
+							res, err := store.LookupActor(context.Background(), actorstore.ActorRef{
+								ActorType: actorType,
+								ActorID:   actorID,
+							}, actorstore.LookupActorOpts{})
+							require.NoErrorf(t, err, "Failed on iteration %s/%s", actorType, actorID)
+							require.NotEqual(t, "50d7623f-b165-4f9e-9f05-3b7a1280b222", res.HostID)
+						}
 					}
 				})
 
@@ -517,27 +553,64 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 				})
 			})
 
+			t.Run("Reload test data", loadTestData(store))
+
 			t.Run("Parallel invocations", func(t *testing.T) {
 				// This is a stress test that invokes LookupActor multiple times, in parallel, also repeating some actor IDs
 				const iterationsPerActorType = 150
 				hostsByActorTypes := testData.HostsByActorType()
-				tt := make([]string, len(hostsByActorTypes)*iterationsPerActorType)
-				i := 0
+				tt := make([]string, 0, (len(hostsByActorTypes)*iterationsPerActorType)+26)
 				for at := range hostsByActorTypes {
 					for j := 0; j < iterationsPerActorType; j++ {
 						// Some actor IDs will be repeated, and that's by design
 						num := mrand.Intn(iterationsPerActorType * 0.7) //nolint:gosec
 						key := fmt.Sprintf("%s/parallel-%d", at, num)
-						tt[(i*iterationsPerActorType)+j] = key
+						tt = append(tt, key)
 					}
-					i++
 				}
+
+				// Add some additional actors that are already active, and some that are active on an unhealthy host
+				tt = append(tt,
+					// Active
+					"type-B/type-B.223",
+					"type-B/type-B.223",
+					"type-B/type-B.224",
+					"type-B/type-B.224",
+					"type-B/type-B.224",
+					"type-A/type-A.11",
+					"type-A/type-A.11",
+					"type-A/type-A.11",
+					"type-A/type-A.13",
+					"type-A/type-A.13",
+					"type-A/type-A.13",
+					"type-B/type-B.111",
+					"type-B/type-B.111",
+					"type-B/type-B.111",
+					// Active but on unhealthy host
+					"type-A/type-A.21",
+					"type-A/type-A.21",
+					"type-A/type-A.21",
+					"type-A/type-A.21",
+					"type-A/type-A.22",
+					"type-A/type-A.22",
+					"type-A/type-A.22",
+					"type-A/type-A.22",
+					"type-B/type-B.121",
+					"type-B/type-B.121",
+					"type-B/type-B.121",
+					"type-B/type-B.121",
+				)
+
+				// Shuffle
+				mrand.Shuffle(len(tt), func(i, j int) {
+					tt[i], tt[j] = tt[j], tt[i]
+				})
 
 				// Start the requests in parallel
 				type result struct {
-					key     string
-					err     error
-					address string
+					key    string
+					err    error
+					hostID string
 				}
 				results := make(chan result)
 				for i := 0; i < len(tt); i++ {
@@ -553,13 +626,13 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 							results <- res
 							return
 						}
-						res.address = lar.Address
+						res.hostID = lar.HostID
 						results <- res
 					}(tt[i])
 				}
 
 				// Read the results
-				collectedAddresses := make(map[string]string, int(float64(len(tt))*0.9))
+				collectedHostIDs := make(map[string]string, int(float64(len(tt))*0.9))
 				collected := make([]string, len(tt))
 				for i := 0; i < len(tt); i++ {
 					res := <-results
@@ -568,10 +641,10 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 					}
 
 					collected[i] = res.key
-					if collectedAddresses[res.key] != "" {
-						assert.Equal(t, res.address, collectedAddresses[res.key])
+					if collectedHostIDs[res.key] != "" {
+						assert.Equal(t, res.hostID, collectedHostIDs[res.key])
 					} else {
-						collectedAddresses[res.key] = res.address
+						collectedHostIDs[res.key] = res.hostID
 					}
 				}
 
@@ -579,6 +652,18 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 				slices.Sort(collected)
 				slices.Sort(tt)
 				assert.Equal(t, tt, collected)
+
+				// Check that certain known actors have expected values
+				// These actors were already active on a healthy host
+				assert.Equal(t, "f4c7d514-3468-48dd-9103-297bf7fe91fd", collectedHostIDs["type-B/type-B.223"])
+				assert.Equal(t, "f4c7d514-3468-48dd-9103-297bf7fe91fd", collectedHostIDs["type-B/type-B.224"])
+				assert.Equal(t, "7de434ce-e285-444f-9857-4d30cade3111", collectedHostIDs["type-A/type-A.11"])
+				assert.Equal(t, "7de434ce-e285-444f-9857-4d30cade3111", collectedHostIDs["type-A/type-A.13"])
+				assert.Equal(t, "7de434ce-e285-444f-9857-4d30cade3111", collectedHostIDs["type-B/type-B.111"])
+				// These actors were already active, but on an unhealthy host
+				assert.NotEqual(t, "50d7623f-b165-4f9e-9f05-3b7a1280b222", collectedHostIDs["type-A/type-A.21"])
+				assert.NotEqual(t, "50d7623f-b165-4f9e-9f05-3b7a1280b222", collectedHostIDs["type-A/type-A.22"])
+				assert.NotEqual(t, "50d7623f-b165-4f9e-9f05-3b7a1280b222", collectedHostIDs["type-B/type-B.121"])
 			})
 
 			t.Run("Error when actor type is empty", func(t *testing.T) {

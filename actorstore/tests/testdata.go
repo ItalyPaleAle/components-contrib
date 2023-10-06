@@ -65,7 +65,7 @@ func init() {
 			"50d7623f-b165-4f9e-9f05-3b7a1280b222": {
 				Address:         "1.1.1.2",
 				AppID:           "myapp1",
-				LastHealthCheck: now.Add(-1 * time.Minute),
+				LastHealthCheck: now.Add(-2 * time.Minute),
 				ActorTypes: map[string]TestDataActorType{
 					"type-A": {
 						IdleTimeout: 10 * time.Minute,
