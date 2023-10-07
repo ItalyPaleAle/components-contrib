@@ -19,8 +19,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dapr/components-contrib/actorstore"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/dapr/components-contrib/actorstore"
 )
 
 func (p *PostgreSQL) GetReminder(ctx context.Context, req actorstore.ReminderRef) (res actorstore.GetReminderResponse, err error) {
