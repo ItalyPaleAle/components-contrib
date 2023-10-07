@@ -1,0 +1,5 @@
+# Supported additional operations: (none)
+componentType: actorstore
+components:
+  - component: postgresql
+    operations: []

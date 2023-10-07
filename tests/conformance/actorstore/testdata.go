@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package tests
+package actorstore
 
 import (
 	"time"
@@ -23,28 +23,31 @@ import (
 
 var (
 	actorsConfiguration actorstore.ActorsConfiguration
-	testData            TestData
+	testData            actorstore.TestData
 )
 
-const testPID = "a1b2c3d4"
+const (
+	configHostHealthCheckInterval = time.Minute
+	testPID                       = "a1b2c3d4"
+)
 
 func init() {
 	now := time.Now()
 
 	actorsConfiguration = actorstore.ActorsConfiguration{
-		HostHealthCheckInterval:      time.Minute,
+		HostHealthCheckInterval:      configHostHealthCheckInterval,
 		RemindersFetchAheadInterval:  5 * time.Second,
 		RemindersLeaseDuration:       10 * time.Second,
 		RemindersFetchAheadBatchSize: 5,
 	}
 
-	testData = TestData{
-		Hosts: map[string]TestDataHost{
+	testData = actorstore.TestData{
+		Hosts: map[string]actorstore.TestDataHost{
 			"7de434ce-e285-444f-9857-4d30cade3111": {
 				Address:         "1.1.1.1",
 				AppID:           "myapp1",
 				LastHealthCheck: now,
-				ActorTypes: map[string]TestDataActorType{
+				ActorTypes: map[string]actorstore.TestDataActorType{
 					"type-A": {
 						IdleTimeout: 10 * time.Minute,
 						ActorIDs: []string{
@@ -66,7 +69,7 @@ func init() {
 				Address:         "1.1.1.2",
 				AppID:           "myapp1",
 				LastHealthCheck: now.Add(-2 * time.Minute),
-				ActorTypes: map[string]TestDataActorType{
+				ActorTypes: map[string]actorstore.TestDataActorType{
 					"type-A": {
 						IdleTimeout: 10 * time.Minute,
 						ActorIDs: []string{
@@ -86,7 +89,7 @@ func init() {
 				Address:         "1.2.1.1",
 				AppID:           "myapp2",
 				LastHealthCheck: now,
-				ActorTypes: map[string]TestDataActorType{
+				ActorTypes: map[string]actorstore.TestDataActorType{
 					"type-B": {
 						IdleTimeout: time.Hour,
 						ActorIDs: []string{
@@ -107,7 +110,7 @@ func init() {
 				Address:         "1.2.1.2",
 				AppID:           "myapp2",
 				LastHealthCheck: now,
-				ActorTypes: map[string]TestDataActorType{
+				ActorTypes: map[string]actorstore.TestDataActorType{
 					"type-B": {
 						IdleTimeout: time.Hour,
 						ActorIDs: []string{
@@ -123,7 +126,7 @@ func init() {
 				},
 			},
 		},
-		Reminders: map[string]TestDataReminder{
+		Reminders: map[string]actorstore.TestDataReminder{
 			"f647315e-ffeb-4727-8a7a-539bb0d3e3cc": {
 				ActorType:     "type-A",
 				ActorID:       "type-A.11",
@@ -184,71 +187,6 @@ func GetActorsConfiguration() actorstore.ActorsConfiguration {
 	return actorsConfiguration
 }
 
-func GetTestData() TestData {
+func GetTestData() actorstore.TestData {
 	return testData
-}
-
-type TestData struct {
-	Hosts     map[string]TestDataHost
-	Reminders map[string]TestDataReminder
-}
-
-type TestDataHost struct {
-	Address         string
-	AppID           string
-	APILevel        int
-	LastHealthCheck time.Time
-	ActorTypes      map[string]TestDataActorType
-}
-
-func (t TestDataHost) IsActive() bool {
-	return time.Since(t.LastHealthCheck) < actorsConfiguration.HostHealthCheckInterval
-}
-
-type TestDataActorType struct {
-	IdleTimeout time.Duration
-	ActorIDs    []string
-}
-
-type TestDataReminder struct {
-	ActorType     string
-	ActorID       string
-	Name          string
-	ExecutionTime time.Time
-	LeaseID       *string
-	LeaseTime     *time.Time
-	LeasePID      *string
-}
-
-func (t TestData) HostsByActorType() map[string][]string {
-	res := make(map[string][]string)
-	for hostID, host := range t.Hosts {
-		for at := range host.ActorTypes {
-			if !host.IsActive() {
-				continue
-			}
-
-			if res[at] == nil {
-				res[at] = []string{hostID}
-			} else {
-				res[at] = append(res[at], hostID)
-			}
-		}
-	}
-	return res
-}
-
-func (t TestData) HostsForActorType(actorType string) []string {
-	res := make([]string, 0)
-	for hostID, host := range t.Hosts {
-		if !host.IsActive() {
-			continue
-		}
-
-		_, ok := host.ActorTypes[actorType]
-		if ok {
-			res = append(res, hostID)
-		}
-	}
-	return res
 }

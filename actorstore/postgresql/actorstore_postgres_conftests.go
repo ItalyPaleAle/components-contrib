@@ -21,9 +21,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/dapr/components-contrib/actorstore/tests"
+	"github.com/dapr/components-contrib/actorstore"
 )
 
 /*
@@ -31,16 +30,22 @@ This file contains additional methods that are only used for testing.
 It is compiled only when the "conftests" tag is enabled
 */
 
-// GetConn returns the database connection.
-func (p *PostgreSQL) GetConn() *pgxpool.Pool {
-	return p.db
+// Cleanup performs a cleanup of test resources.
+func (p *PostgreSQL) Cleanup() {
+	for _, table := range []pgTable{pgTableActors, pgTableHostsActorTypes, pgTableHosts, pgTableReminders, "metadata"} {
+		p.logger.Infof("Removing table %s", p.metadata.TableName(table))
+		_, err := p.db.Exec(context.Background(), fmt.Sprintf("DROP TABLE %s", p.metadata.TableName(table)))
+		if err != nil {
+			p.logger.Errorf("Failed to remove table %s: %v", table, err)
+		}
+	}
 }
 
 // GetAllHosts returns the entire list of hosts in the database.
-func (p *PostgreSQL) GetAllHosts() (map[string]tests.TestDataHost, error) {
+func (p *PostgreSQL) GetAllHosts() (map[string]actorstore.TestDataHost, error) {
 	// Use a transaction for consistency
-	return executeInTransaction(context.Background(), p.logger, p.db, time.Minute, func(ctx context.Context, tx pgx.Tx) (map[string]tests.TestDataHost, error) {
-		res := map[string]tests.TestDataHost{}
+	return executeInTransaction(context.Background(), p.logger, p.db, time.Minute, func(ctx context.Context, tx pgx.Tx) (map[string]actorstore.TestDataHost, error) {
+		res := map[string]actorstore.TestDataHost{}
 
 		// First, load all hosts
 		rows, err := tx.Query(ctx, "SELECT host_id, host_address, host_app_id, host_actors_api_level, host_last_healthcheck FROM "+p.metadata.TableName(pgTableHosts))
@@ -50,8 +55,8 @@ func (p *PostgreSQL) GetAllHosts() (map[string]tests.TestDataHost, error) {
 
 		for rows.Next() {
 			var hostID string
-			r := tests.TestDataHost{
-				ActorTypes: map[string]tests.TestDataActorType{},
+			r := actorstore.TestDataHost{
+				ActorTypes: map[string]actorstore.TestDataActorType{},
 			}
 			err = rows.Scan(&hostID, &r.Address, &r.AppID, &r.APILevel, &r.LastHealthCheck)
 			if err != nil {
@@ -82,7 +87,7 @@ func (p *PostgreSQL) GetAllHosts() (map[string]tests.TestDataHost, error) {
 				// Should never happen, given that host_id has a foreign key reference to the hosts table…
 				return nil, fmt.Errorf("hosts actor types table contains data for non-existing host ID: %s", hostID)
 			}
-			host.ActorTypes[actorType] = tests.TestDataActorType{
+			host.ActorTypes[actorType] = actorstore.TestDataActorType{
 				IdleTimeout: time.Duration(idleTimeout) * time.Second,
 				ActorIDs:    make([]string, 0),
 			}
@@ -121,4 +126,90 @@ func (p *PostgreSQL) GetAllHosts() (map[string]tests.TestDataHost, error) {
 
 		return res, nil
 	})
+}
+
+// LoadTestData loads all test data in the database.
+func (p *PostgreSQL) LoadTestData(testData actorstore.TestData) error {
+	hosts := [][]any{}
+	hostsActorTypes := [][]any{}
+	actors := [][]any{}
+	reminders := [][]any{}
+
+	for hostID, host := range testData.Hosts {
+		hosts = append(hosts, []any{hostID, host.Address, host.AppID, host.APILevel, host.LastHealthCheck})
+
+		for actorType, at := range host.ActorTypes {
+			hostsActorTypes = append(hostsActorTypes, []any{hostID, actorType, int(at.IdleTimeout.Seconds())})
+
+			for _, actorID := range at.ActorIDs {
+				actors = append(actors, []any{actorType, actorID, hostID, int(at.IdleTimeout.Seconds())})
+			}
+		}
+	}
+
+	for reminderID, reminder := range testData.Reminders {
+		reminders = append(reminders, []any{
+			reminderID, reminder.ActorType, reminder.ActorID, reminder.Name,
+			reminder.ExecutionTime, reminder.LeaseID, reminder.LeaseTime, reminder.LeasePID,
+		})
+	}
+
+	// Clean the tables first
+	// Note that the hosts actor types and actors table use foreign keys, so deleting hosts is enough to clean those too
+	_, err := p.db.Exec(
+		context.Background(),
+		"DELETE FROM "+p.metadata.TableName(pgTableHosts),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to clean the hosts table: %w", err)
+	}
+	_, err = p.db.Exec(
+		context.Background(),
+		"DELETE FROM "+p.metadata.TableName(pgTableReminders),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to clean the reminders table: %w", err)
+	}
+
+	_, err = p.db.CopyFrom(
+		context.Background(),
+		pgx.Identifier{p.metadata.TableName(pgTableHosts)},
+		[]string{"host_id", "host_address", "host_app_id", "host_actors_api_level", "host_last_healthcheck"},
+		pgx.CopyFromRows(hosts),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load test data for hosts table: %w", err)
+	}
+
+	_, err = p.db.CopyFrom(
+		context.Background(),
+		pgx.Identifier{p.metadata.TableName(pgTableHostsActorTypes)},
+		[]string{"host_id", "actor_type", "actor_idle_timeout"},
+		pgx.CopyFromRows(hostsActorTypes),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load test data for hosts actor types table: %w", err)
+	}
+
+	_, err = p.db.CopyFrom(
+		context.Background(),
+		pgx.Identifier{p.metadata.TableName(pgTableActors)},
+		[]string{"actor_type", "actor_id", "host_id", "actor_idle_timeout"},
+		pgx.CopyFromRows(actors),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load test data for actors table: %w", err)
+	}
+
+	_, err = p.db.CopyFrom(
+		context.Background(),
+		pgx.Identifier{p.metadata.TableName(pgTableReminders)},
+		[]string{"reminder_id", "actor_type", "actor_id", "reminder_name", "reminder_execution_time", "reminder_lease_id", "reminder_lease_time", "reminder_lease_pid"},
+		pgx.CopyFromRows(reminders),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load test data for reminders table: %w", err)
+	}
+
+	return nil
 }

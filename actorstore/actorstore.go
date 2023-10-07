@@ -31,6 +31,10 @@ type Store interface {
 	StoreActorState
 	StoreReminders
 
+	// This interface contains methods that are used for conformance tests
+	// It is empty if the code is compiled without the "conftests" tag
+	StoreConfTests
+
 	// Init the actor store.
 	Init(ctx context.Context, md Metadata) error
 }

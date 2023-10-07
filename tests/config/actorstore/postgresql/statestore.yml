@@ -1,0 +1,14 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: actorstore
+spec:
+  type: actorstore.postgresql
+  version: v1
+  metadata:
+    - name: connectionString
+      value: "postgres://postgres:example@localhost:5432/dapr_test"
+    - name: tablePrefix
+      value: "conftests_"
+    - name: metadataTableName
+      value: "conftests_metadata"

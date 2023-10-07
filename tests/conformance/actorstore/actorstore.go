@@ -13,139 +13,56 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package postgresql
+package actorstore
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
-	"io"
 	mrand "math/rand"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 
 	"github.com/dapr/components-contrib/actorstore"
-	"github.com/dapr/components-contrib/actorstore/tests"
 	"github.com/dapr/components-contrib/metadata"
-	"github.com/dapr/kit/logger"
+	"github.com/dapr/components-contrib/tests/conformance/utils"
+	"github.com/dapr/kit/config"
 )
 
-func generateTablePrefix(t *testing.T) string {
-	b := make([]byte, 4)
-	_, err := io.ReadFull(rand.Reader, b)
-	require.NoError(t, err)
-
-	return "conftests_" + hex.EncodeToString(b) + "_"
+type TestConfig struct {
+	utils.CommonConfig
 }
 
-func loadTestData(store *PostgreSQL) func(t *testing.T) {
-	return func(t *testing.T) {
-		t.Helper()
-
-		testData := tests.GetTestData()
-
-		hosts := [][]any{}
-		hostsActorTypes := [][]any{}
-		actors := [][]any{}
-		reminders := [][]any{}
-
-		for hostID, host := range testData.Hosts {
-			hosts = append(hosts, []any{hostID, host.Address, host.AppID, host.APILevel, host.LastHealthCheck})
-
-			for actorType, at := range host.ActorTypes {
-				hostsActorTypes = append(hostsActorTypes, []any{hostID, actorType, int(at.IdleTimeout.Seconds())})
-
-				for _, actorID := range at.ActorIDs {
-					actors = append(actors, []any{actorType, actorID, hostID, int(at.IdleTimeout.Seconds())})
-				}
-			}
-		}
-
-		for reminderID, reminder := range testData.Reminders {
-			reminders = append(reminders, []any{
-				reminderID, reminder.ActorType, reminder.ActorID, reminder.Name,
-				reminder.ExecutionTime, reminder.LeaseID, reminder.LeaseTime, reminder.LeasePID,
-			})
-		}
-
-		// Clean the tables first
-		// Note that the hosts actor types and actors table use foreign keys, so deleting hosts is enough to clean those too
-		_, err := store.GetConn().Exec(
-			context.Background(),
-			"DELETE FROM "+store.metadata.TableName(pgTableHosts),
-		)
-		require.NoError(t, err, "Failed to clean the hosts table")
-		_, err = store.GetConn().Exec(
-			context.Background(),
-			"DELETE FROM "+store.metadata.TableName(pgTableReminders),
-		)
-		require.NoError(t, err, "Failed to clean the reminders table")
-
-		_, err = store.GetConn().CopyFrom(
-			context.Background(),
-			pgx.Identifier{store.metadata.TableName(pgTableHosts)},
-			[]string{"host_id", "host_address", "host_app_id", "host_actors_api_level", "host_last_healthcheck"},
-			pgx.CopyFromRows(hosts),
-		)
-		require.NoError(t, err, "Failed to load test data for hosts table")
-
-		_, err = store.GetConn().CopyFrom(
-			context.Background(),
-			pgx.Identifier{store.metadata.TableName(pgTableHostsActorTypes)},
-			[]string{"host_id", "actor_type", "actor_idle_timeout"},
-			pgx.CopyFromRows(hostsActorTypes),
-		)
-		require.NoError(t, err, "Failed to load test data for hosts actor types table")
-
-		_, err = store.GetConn().CopyFrom(
-			context.Background(),
-			pgx.Identifier{store.metadata.TableName(pgTableActors)},
-			[]string{"actor_type", "actor_id", "host_id", "actor_idle_timeout"},
-			pgx.CopyFromRows(actors),
-		)
-		require.NoError(t, err, "Failed to load test data for actors table")
-
-		_, err = store.GetConn().CopyFrom(
-			context.Background(),
-			pgx.Identifier{store.metadata.TableName(pgTableReminders)},
-			[]string{"reminder_id", "actor_type", "actor_id", "reminder_name", "reminder_execution_time", "reminder_lease_id", "reminder_lease_time", "reminder_lease_pid"},
-			pgx.CopyFromRows(reminders),
-		)
-		require.NoError(t, err, "Failed to load test data for reminders table")
+func NewTestConfig(component string, operations []string, configMap map[string]interface{}) (TestConfig, error) {
+	testConfig := TestConfig{
+		CommonConfig: utils.CommonConfig{
+			ComponentType: "actorstore",
+			ComponentName: component,
+			Operations:    utils.NewStringSet(operations...),
+		},
 	}
+
+	err := config.Decode(configMap, &testConfig)
+	if err != nil {
+		return testConfig, err
+	}
+
+	return testConfig, nil
 }
 
-func TestComponent(t *testing.T) {
-	connString := os.Getenv("POSTGRES_ACTORSTORE_CONNSTRING")
-	if connString == "" {
-		t.Skip("Test skipped because the 'POSTGRES_ACTORSTORE_CONNSTRING' is missing")
-	}
-
-	log := logger.NewLogger("conftests")
-	store := NewPostgreSQLActorStore(log).(*PostgreSQL)
-	tablePrefix := generateTablePrefix(t)
-
-	log.Infof("Table prefix: %s", tablePrefix)
-
+// ConformanceTests runs conf tests for actor stores.
+func ConformanceTests(t *testing.T, props map[string]string, store actorstore.Store, config TestConfig) {
 	t.Run("Init", func(t *testing.T) {
 		err := store.Init(context.Background(), actorstore.Metadata{
-			PID:           tests.GetTestPID(),
-			Configuration: tests.GetActorsConfiguration(),
+			PID:           GetTestPID(),
+			Configuration: GetActorsConfiguration(),
 			Base: metadata.Base{
-				Properties: map[string]string{
-					"connectionString":  connString,
-					"metadataTableName": tablePrefix + "metadata",
-					"tablePrefix":       tablePrefix,
-				},
+				Properties: props,
 			},
 		})
 		require.NoError(t, err)
@@ -160,14 +77,7 @@ func TestComponent(t *testing.T) {
 			return
 		}
 
-		log.Info("Removing tables")
-		for _, table := range []pgTable{pgTableActors, pgTableHostsActorTypes, pgTableHosts, pgTableReminders, "metadata"} {
-			log.Infof("Removing table %s", store.metadata.TableName(table))
-			_, err := store.GetConn().Exec(context.Background(), fmt.Sprintf("DROP TABLE %s", store.metadata.TableName(table)))
-			if err != nil {
-				log.Errorf("Failed to remove table %s: %v", table, err)
-			}
-		}
+		store.Cleanup()
 		cleanupDone = true
 	}
 	t.Cleanup(cleanupFn)
@@ -187,9 +97,9 @@ func TestComponent(t *testing.T) {
 	})
 }
 
-func actorStateTests(store *PostgreSQL) func(t *testing.T) {
+func actorStateTests(store actorstore.Store) func(t *testing.T) {
 	return func(t *testing.T) {
-		testData := tests.GetTestData()
+		testData := GetTestData()
 		var addedHostID string
 
 		t.Run("Add new host", func(t *testing.T) {
@@ -275,7 +185,7 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 				require.NoError(t, err)
 
 				expect := before[addedHostID]
-				expect.ActorTypes = map[string]tests.TestDataActorType{
+				expect.ActorTypes = map[string]actorstore.TestDataActorType{
 					"newtype": {
 						IdleTimeout: 10 * time.Second,
 						ActorIDs:    []string{},
@@ -389,7 +299,7 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 
 				t.Run("Inactive actor", func(t *testing.T) {
 					const iterationsPerActorType = 50
-					for at, atHosts := range testData.HostsByActorType() {
+					for at, atHosts := range testData.HostsByActorType(configHostHealthCheckInterval) {
 						t.Run(at, func(t *testing.T) {
 							counts := map[string]int{}
 							for _, host := range atHosts {
@@ -491,7 +401,7 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 
 				t.Run("Inactive actor", func(t *testing.T) {
 					const iterationsPerActorType = 50
-					for at, atHosts := range testData.HostsByActorType() {
+					for at, atHosts := range testData.HostsByActorType(configHostHealthCheckInterval) {
 						t.Run(at, func(t *testing.T) {
 							counts := map[string]int{}
 							for _, host := range atHosts {
@@ -554,7 +464,7 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 					return func(t *testing.T) {
 						// This is a stress test that invokes LookupActor multiple times, in parallel, also repeating some actor IDs
 						const iterationsPerActorType = 150
-						hostsByActorTypes := testData.HostsByActorType()
+						hostsByActorTypes := testData.HostsByActorType(configHostHealthCheckInterval)
 						tt := make([]string, 0, (len(hostsByActorTypes)*iterationsPerActorType)+26)
 						for at := range hostsByActorTypes {
 							for j := 0; j < iterationsPerActorType; j++ {
@@ -724,5 +634,12 @@ func actorStateTests(store *PostgreSQL) func(t *testing.T) {
 				require.NotContains(t, after[hostID].ActorTypes[actorType].ActorIDs, actorID)
 			})
 		})
+	}
+}
+
+func loadTestData(store actorstore.Store) func(t *testing.T) {
+	return func(t *testing.T) {
+		t.Helper()
+		require.NoError(t, store.LoadTestData(GetTestData()), "Failed to load test data")
 	}
 }
