@@ -29,6 +29,9 @@ type StoreConfTests interface {
 	// GetAllHosts returns the entire list of hosts in the database.
 	GetAllHosts() (map[string]TestDataHost, error)
 
+	// GetAllReminders returns the entire list of reminders in the database.
+	GetAllReminders() (map[string]TestDataReminder, error)
+
 	// LoadTestData loads all test data in the database.
 	LoadTestData(testData TestData) error
 }

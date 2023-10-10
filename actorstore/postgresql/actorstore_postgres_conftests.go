@@ -128,6 +128,29 @@ func (p *PostgreSQL) GetAllHosts() (map[string]actorstore.TestDataHost, error) {
 	})
 }
 
+// GetAllReminders returns the entire list of reminders in the database.
+func (p *PostgreSQL) GetAllReminders() (map[string]actorstore.TestDataReminder, error) {
+	res := map[string]actorstore.TestDataReminder{}
+
+	// First, load all hosts
+	rows, err := p.db.Query(context.Background(), "SELECT reminder_id, actor_type, actor_id, reminder_name, reminder_execution_time, reminder_lease_id, reminder_lease_time, reminder_lease_pid FROM "+p.metadata.TableName(pgTableReminders))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load data from the reminders table: %w", err)
+	}
+
+	for rows.Next() {
+		var reminderID string
+		r := actorstore.TestDataReminder{}
+		err = rows.Scan(&reminderID, &r.ActorType, &r.ActorID, &r.Name, &r.ExecutionTime, &r.LeaseID, &r.LeaseTime, &r.LeasePID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load data from the reminders table: %w", err)
+		}
+		res[reminderID] = r
+	}
+
+	return res, nil
+}
+
 // LoadTestData loads all test data in the database.
 func (p *PostgreSQL) LoadTestData(testData actorstore.TestData) error {
 	hosts := [][]any{}
