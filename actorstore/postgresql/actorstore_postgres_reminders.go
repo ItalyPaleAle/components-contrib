@@ -125,15 +125,15 @@ func (p *PostgreSQL) DeleteReminder(ctx context.Context, req actorstore.Reminder
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
-	_, err := p.db.Exec(queryCtx,
+	rows, err := p.db.Exec(queryCtx,
 		fmt.Sprintf(`DELETE FROM %s WHERE actor_type = $1 AND actor_id = $2 AND reminder_name = $3`, p.metadata.TableName(pgTableReminders)),
 		req.ActorType, req.ActorID, req.Name,
 	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return actorstore.ErrReminderNotFound
-		}
 		return fmt.Errorf("failed to delete reminder: %w", err)
+	}
+	if rows.RowsAffected() == 0 {
+		return actorstore.ErrReminderNotFound
 	}
 	return nil
 }
@@ -271,15 +271,15 @@ func (p *PostgreSQL) DeleteReminderWithLease(ctx context.Context, fr *actorstore
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, p.metadata.Timeout)
 	defer queryCancel()
-	_, err := p.db.Exec(queryCtx,
+	res, err := p.db.Exec(queryCtx,
 		fmt.Sprintf(`DELETE FROM %s WHERE reminder_id = $1 AND reminder_lease_id = $2 AND reminder_lease_pid = $3`, p.metadata.TableName(pgTableReminders)),
 		lease.reminderID, *lease.leaseID, p.metadata.PID,
 	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return actorstore.ErrReminderNotFound
-		}
 		return fmt.Errorf("failed to delete reminder: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return actorstore.ErrReminderNotFound
 	}
 	return nil
 }
