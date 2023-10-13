@@ -14,6 +14,7 @@ limitations under the License.
 package consul
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -171,8 +172,8 @@ func formatAddress(address string, port string) (addr string, err error) {
 
 // getConfig configuration from metadata, defaults are best suited for self-hosted mode.
 func getConfig(metadata nr.Metadata) (resolverCfg resolverConfig, err error) {
-	if metadata.Properties[nr.DaprPort] == "" {
-		return resolverCfg, fmt.Errorf("metadata property missing: %s", nr.DaprPort)
+	if metadata.Instance.DaprInternalPort <= 0 {
+		return resolverCfg, errors.New("missing Dapr port")
 	}
 
 	cfg, err := parseConfig(metadata.Configuration)
@@ -188,7 +189,7 @@ func getConfig(metadata nr.Metadata) (resolverCfg resolverConfig, err error) {
 	}
 
 	resolverCfg.Client = getClientConfig(cfg)
-	resolverCfg.Registration, err = getRegistrationConfig(cfg, metadata.Properties)
+	resolverCfg.Registration, err = getRegistrationConfig(cfg, metadata.Instance)
 	if err != nil {
 		return resolverCfg, err
 	}
@@ -200,7 +201,7 @@ func getConfig(metadata nr.Metadata) (resolverCfg resolverConfig, err error) {
 			resolverCfg.Registration.Meta = map[string]string{}
 		}
 
-		resolverCfg.Registration.Meta[resolverCfg.DaprPortMetaKey] = metadata.Properties[nr.DaprPort]
+		resolverCfg.Registration.Meta[resolverCfg.DaprPortMetaKey] = strconv.Itoa(metadata.Instance.DaprInternalPort)
 	}
 
 	return resolverCfg, nil
@@ -215,7 +216,7 @@ func getClientConfig(cfg configSpec) *consul.Config {
 	return consul.DefaultConfig()
 }
 
-func getRegistrationConfig(cfg configSpec, props map[string]string) (*consul.AgentServiceRegistration, error) {
+func getRegistrationConfig(cfg configSpec, instance nr.Instance) (*consul.AgentServiceRegistration, error) {
 	// if advanced registration configured ignore other registration related configs
 	if cfg.AdvancedRegistration != nil {
 		return cfg.AdvancedRegistration, nil
@@ -224,55 +225,41 @@ func getRegistrationConfig(cfg configSpec, props map[string]string) (*consul.Age
 		return nil, nil
 	}
 
-	var (
-		appID    string
-		appPort  string
-		host     string
-		httpPort string
-		ok       bool
-	)
-
-	if appID, ok = props[nr.AppID]; !ok {
-		return nil, fmt.Errorf("metadata property missing: %s", nr.AppID)
+	if instance.AppID == "" {
+		return nil, errors.New("missing app ID")
 	}
 
-	if appPort, ok = props[nr.AppPort]; !ok {
-		return nil, fmt.Errorf("metadata property missing: %s", nr.AppPort)
+	if instance.AppPort <= 0 {
+		return nil, errors.New("missing app port")
 	}
 
-	if host, ok = props[nr.HostAddress]; !ok {
-		return nil, fmt.Errorf("metadata property missing: %s", nr.HostAddress)
+	if instance.Address == "" {
+		return nil, errors.New("missing address")
 	}
 
-	if httpPort, ok = props[nr.DaprHTTPPort]; !ok {
-		return nil, fmt.Errorf("metadata property missing: %s", nr.DaprHTTPPort)
-	} else if _, err := strconv.ParseUint(httpPort, 10, 0); err != nil {
-		return nil, fmt.Errorf("error parsing %s: %w", nr.DaprHTTPPort, err)
+	if instance.DaprHTTPPort <= 0 {
+		return nil, errors.New("missing Dapr HTTP port")
 	}
 
-	id := appID + "-" + host + "-" + httpPort
+	httpPort := strconv.Itoa(instance.DaprHTTPPort)
+	id := instance.AppID + "-" + instance.Address + "-" + httpPort
 	// if no health checks configured add dapr sidecar health check by default
 	if len(cfg.Checks) == 0 {
 		cfg.Checks = []*consul.AgentServiceCheck{
 			{
 				Name:     "Dapr Health Status",
-				CheckID:  fmt.Sprintf("daprHealth:%s", id),
+				CheckID:  "daprHealth:" + id,
 				Interval: "15s",
-				HTTP:     fmt.Sprintf("http://%s/v1.0/healthz?appid=%s", net.JoinHostPort(host, httpPort), appID),
+				HTTP:     fmt.Sprintf("http://%s/v1.0/healthz?appid=%s", net.JoinHostPort(instance.Address, httpPort), instance.AppID),
 			},
 		}
 	}
 
-	appPortInt, err := strconv.Atoi(appPort)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing %s: %w", nr.AppPort, err)
-	}
-
 	return &consul.AgentServiceRegistration{
 		ID:      id,
-		Name:    appID,
-		Address: host,
-		Port:    appPortInt,
+		Name:    instance.AppID,
+		Address: instance.Address,
+		Port:    instance.AppPort,
 		Checks:  cfg.Checks,
 		Tags:    cfg.Tags,
 		Meta:    cfg.Meta,

@@ -13,23 +13,22 @@ limitations under the License.
 
 package nameresolution
 
-import "github.com/dapr/components-contrib/metadata"
-
-const (
-	// HostAddress is the address of the instance.
-	HostAddress string = "HOST_ADDRESS"
-	// DaprHTTPPort is the dapr api http port.
-	DaprHTTPPort string = "DAPR_HTTP_PORT"
-	// DaprPort is the dapr internal grpc port (sidecar to sidecar).
-	DaprPort string = "DAPR_PORT"
-	// AppPort is the port of the application, http/grpc depending on mode.
-	AppPort string = "APP_PORT"
-	// AppID is the ID of the application.
-	AppID string = "APP_ID"
-)
-
 // Metadata contains a name resolution specific set of metadata properties.
 type Metadata struct {
-	metadata.Base `json:",inline"`
-	Configuration interface{}
+	Instance      Instance
+	Configuration any
+}
+
+// Instance contains information about the instance.
+type Instance struct {
+	// App ID.
+	AppID string
+	// Address of the instance.
+	Address string
+	// Dapr HTTP API port.
+	DaprHTTPPort int
+	// Dapr internal gRPC port (for sidecar-to-sidecar communication).
+	DaprInternalPort int
+	// Port the application is listening on (either HTTP or gRPC).
+	AppPort int
 }
