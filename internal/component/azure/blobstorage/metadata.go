@@ -21,12 +21,14 @@ import (
 
 	azauth "github.com/dapr/components-contrib/internal/authentication/azure"
 	mdutils "github.com/dapr/components-contrib/metadata"
+	kitmd "github.com/dapr/kit/metadata"
 )
 
 type BlobStorageMetadata struct {
-	ContainerClientOpts `json:",inline" mapstructure:",squash"`
-	DecodeBase64        bool `json:"decodeBase64,string" mapstructure:"decodeBase64" mdonly:"bindings"`
-	PublicAccessLevel   azblob.PublicAccessType
+	ContainerClientOpts     `json:",inline" mapstructure:",squash"`
+	DecodeBase64            bool `json:"decodeBase64,string" mapstructure:"decodeBase64" mdonly:"bindings"`
+	PublicAccessLevel       azblob.PublicAccessType
+	DisableEntityManagement bool `json:"disableEntityManagement,string" mapstructure:"disableEntityManagement"`
 }
 
 type ContainerClientOpts struct {
@@ -48,7 +50,10 @@ type ContainerClientOpts struct {
 func parseMetadata(meta map[string]string) (*BlobStorageMetadata, error) {
 	m := BlobStorageMetadata{}
 	m.RetryCount = defaultBlobRetryCount
-	mdutils.DecodeMetadata(meta, &m)
+	decodeErr := kitmd.DecodeMetadata(meta, &m)
+	if decodeErr != nil {
+		return nil, fmt.Errorf("failed to decode metadata: %w", decodeErr)
+	}
 
 	if m.ConnectionString == "" {
 		if val, ok := mdutils.GetMetadataProperty(meta, azauth.MetadataKeys["StorageAccountName"]...); ok && val != "" {
