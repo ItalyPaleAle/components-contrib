@@ -19,7 +19,7 @@ import (
 
 	"github.com/dapr/components-contrib/actorstore"
 	pgauth "github.com/dapr/components-contrib/internal/authentication/postgresql"
-	"github.com/dapr/components-contrib/metadata"
+	"github.com/dapr/kit/metadata"
 )
 
 type pgTable string
