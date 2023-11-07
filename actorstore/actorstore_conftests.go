@@ -24,7 +24,7 @@ import (
 // The same is defined in actorstore_no_conftests.go, where there's no build tag, as an empty interface.
 type StoreConfTests interface {
 	// Cleanup performs a cleanup of test resources.
-	Cleanup()
+	Cleanup() error
 
 	// GetAllHosts returns the entire list of hosts in the database.
 	GetAllHosts() (map[string]TestDataHost, error)

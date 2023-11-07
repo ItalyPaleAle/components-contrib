@@ -19,6 +19,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dapr/components-contrib/actorstore"
@@ -70,7 +71,8 @@ func ConformanceTests(t *testing.T, props map[string]string, store actorstore.St
 			return
 		}
 
-		store.Cleanup()
+		cleanupErr := store.Cleanup()
+		assert.NoError(t, cleanupErr)
 		cleanupDone = true
 	}
 	t.Cleanup(cleanupFn)
@@ -79,7 +81,7 @@ func ConformanceTests(t *testing.T, props map[string]string, store actorstore.St
 
 	require.False(t, t.Failed(), "Cannot continue if 'Load test data' test has failed")
 
-	//t.Run("Actor state", actorStateTests(store))
+	t.Run("Actor state", actorStateTests(store))
 
 	t.Run("Reminders", remindersTest(store))
 

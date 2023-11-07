@@ -17,6 +17,7 @@ package postgresql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -31,14 +32,17 @@ It is compiled only when the "conftests" tag is enabled
 */
 
 // Cleanup performs a cleanup of test resources.
-func (p *PostgreSQL) Cleanup() {
-	for _, table := range []pgTable{pgTableActors, pgTableHostsActorTypes, pgTableHosts, pgTableReminders, "metadata"} {
+func (p *PostgreSQL) Cleanup() error {
+	errs := []error{}
+	for _, table := range []pgTable{pgTableReminders, pgTableActors, pgTableHostsActorTypes, pgTableHosts, "metadata"} {
 		p.logger.Infof("Removing table %s", p.metadata.TableName(table))
 		_, err := p.db.Exec(context.Background(), fmt.Sprintf("DROP TABLE %s", p.metadata.TableName(table)))
 		if err != nil {
 			p.logger.Errorf("Failed to remove table %s: %v", table, err)
+			errs = append(errs, err)
 		}
 	}
+	return errors.Join(errs...)
 }
 
 // GetAllHosts returns the entire list of hosts in the database.
