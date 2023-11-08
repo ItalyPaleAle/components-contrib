@@ -34,6 +34,7 @@ CREATE TABLE %[2]s (
   host_id uuid NOT NULL,
   actor_type text NOT NULL,
   actor_idle_timeout integer NOT NULL,
+  actor_concurrent_reminders integer NOT NULL DEFAULT 0,
   PRIMARY KEY (host_id, actor_type),
   FOREIGN KEY (host_id) REFERENCES %[1]s (host_id) ON DELETE CASCADE
 );

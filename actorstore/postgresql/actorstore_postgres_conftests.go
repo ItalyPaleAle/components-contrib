@@ -166,7 +166,7 @@ func (p *PostgreSQL) LoadTestData(testData actorstore.TestData) error {
 		hosts = append(hosts, []any{hostID, host.Address, host.AppID, host.APILevel, host.LastHealthCheck})
 
 		for actorType, at := range host.ActorTypes {
-			hostsActorTypes = append(hostsActorTypes, []any{hostID, actorType, int(at.IdleTimeout.Seconds())})
+			hostsActorTypes = append(hostsActorTypes, []any{hostID, actorType, int(at.IdleTimeout.Seconds()), at.ConcurrentRemindersLimit})
 
 			for _, actorID := range at.ActorIDs {
 				actors = append(actors, []any{actorType, actorID, hostID, int(at.IdleTimeout.Seconds())})
@@ -211,7 +211,7 @@ func (p *PostgreSQL) LoadTestData(testData actorstore.TestData) error {
 	_, err = p.db.CopyFrom(
 		context.Background(),
 		pgx.Identifier{p.metadata.TableName(pgTableHostsActorTypes)},
-		[]string{"host_id", "actor_type", "actor_idle_timeout"},
+		[]string{"host_id", "actor_type", "actor_idle_timeout", "actor_concurrent_reminders"},
 		pgx.CopyFromRows(hostsActorTypes),
 	)
 	if err != nil {

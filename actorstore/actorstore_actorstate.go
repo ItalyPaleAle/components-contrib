@@ -88,6 +88,8 @@ type ActorHostType struct {
 	ActorType string
 	// Actor idle timeout, in seconds
 	IdleTimeout uint32
+	// Maxium number of reminders concurrently active on a host for the given actor type
+	ConcurrentRemindersLimit uint32
 }
 
 // ActorRef is the reference to an actor (type and ID).

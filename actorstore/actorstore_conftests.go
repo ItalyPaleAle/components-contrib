@@ -54,8 +54,9 @@ func (t TestDataHost) IsActive(hostHealthCheckInterval time.Duration) bool {
 }
 
 type TestDataActorType struct {
-	IdleTimeout time.Duration
-	ActorIDs    []string
+	IdleTimeout              time.Duration
+	ActorIDs                 []string
+	ConcurrentRemindersLimit int
 }
 
 type TestDataReminder struct {
