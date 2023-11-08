@@ -32,8 +32,11 @@ type StoreConfTests interface {
 	// GetAllReminders returns the entire list of reminders in the database.
 	GetAllReminders() (map[string]TestDataReminder, error)
 
-	// LoadTestData loads all test data in the database.
-	LoadTestData(testData TestData) error
+	// LoadActorStateTestData loads all actor state test data in the databas
+	LoadActorStateTestData(testData TestData) error
+
+	// LoadReminderTestData loads all reminder test data in the database.
+	LoadReminderTestData(testData TestData) error
 }
 
 type TestData struct {
@@ -63,7 +66,7 @@ type TestDataReminder struct {
 	ActorType     string
 	ActorID       string
 	Name          string
-	ExecutionTime time.Time
+	ExecutionTime time.Duration
 	LeaseID       *string
 	LeaseTime     *time.Time
 	LeasePID      *string

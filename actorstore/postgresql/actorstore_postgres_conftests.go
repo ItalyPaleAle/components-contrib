@@ -155,12 +155,11 @@ func (p *PostgreSQL) GetAllReminders() (map[string]actorstore.TestDataReminder, 
 	return res, nil
 }
 
-// LoadTestData loads all test data in the database.
-func (p *PostgreSQL) LoadTestData(testData actorstore.TestData) error {
+// LoadActorStateTestData loads all actor state test data in the database.
+func (p *PostgreSQL) LoadActorStateTestData(testData actorstore.TestData) error {
 	hosts := [][]any{}
 	hostsActorTypes := [][]any{}
 	actors := [][]any{}
-	reminders := [][]any{}
 
 	for hostID, host := range testData.Hosts {
 		hosts = append(hosts, []any{hostID, host.Address, host.AppID, host.APILevel, host.LastHealthCheck})
@@ -174,13 +173,6 @@ func (p *PostgreSQL) LoadTestData(testData actorstore.TestData) error {
 		}
 	}
 
-	for reminderID, reminder := range testData.Reminders {
-		reminders = append(reminders, []any{
-			reminderID, reminder.ActorType, reminder.ActorID, reminder.Name,
-			reminder.ExecutionTime, reminder.LeaseID, reminder.LeaseTime, reminder.LeasePID,
-		})
-	}
-
 	// Clean the tables first
 	// Note that the hosts actor types and actors table use foreign keys, so deleting hosts is enough to clean those too
 	_, err := p.db.Exec(
@@ -190,14 +182,8 @@ func (p *PostgreSQL) LoadTestData(testData actorstore.TestData) error {
 	if err != nil {
 		return fmt.Errorf("failed to clean the hosts table: %w", err)
 	}
-	_, err = p.db.Exec(
-		context.Background(),
-		"DELETE FROM "+p.metadata.TableName(pgTableReminders),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to clean the reminders table: %w", err)
-	}
 
+	// Copy data for each table
 	_, err = p.db.CopyFrom(
 		context.Background(),
 		pgx.Identifier{p.metadata.TableName(pgTableHosts)},
@@ -228,6 +214,31 @@ func (p *PostgreSQL) LoadTestData(testData actorstore.TestData) error {
 		return fmt.Errorf("failed to load test data for actors table: %w", err)
 	}
 
+	return nil
+}
+
+// LoadReminderTestData loads all reminder test data in the database.
+func (p *PostgreSQL) LoadReminderTestData(testData actorstore.TestData) error {
+	now := time.Now()
+
+	reminders := [][]any{}
+	for reminderID, reminder := range testData.Reminders {
+		reminders = append(reminders, []any{
+			reminderID, reminder.ActorType, reminder.ActorID, reminder.Name,
+			now.Add(reminder.ExecutionTime), reminder.LeaseID, reminder.LeaseTime, reminder.LeasePID,
+		})
+	}
+
+	// Clean the table first
+	_, err := p.db.Exec(
+		context.Background(),
+		"DELETE FROM "+p.metadata.TableName(pgTableReminders),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to clean the reminders table: %w", err)
+	}
+
+	// Copy data
 	_, err = p.db.CopyFrom(
 		context.Background(),
 		pgx.Identifier{p.metadata.TableName(pgTableReminders)},

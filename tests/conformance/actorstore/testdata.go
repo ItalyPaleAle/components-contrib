@@ -36,9 +36,9 @@ func init() {
 
 	actorsConfiguration = actorstore.ActorsConfiguration{
 		HostHealthCheckInterval:      configHostHealthCheckInterval,
-		RemindersFetchAheadInterval:  5 * time.Second,
-		RemindersLeaseDuration:       10 * time.Second,
-		RemindersFetchAheadBatchSize: 5,
+		RemindersFetchAheadInterval:  2 * time.Second,
+		RemindersLeaseDuration:       5 * time.Second,
+		RemindersFetchAheadBatchSize: 2,
 	}
 
 	testData = actorstore.TestData{
@@ -127,53 +127,87 @@ func init() {
 			},
 		},
 		Reminders: map[string]actorstore.TestDataReminder{
+			// Actor active on 7de434ce-e285-444f-9857-4d30cade3111
 			"f647315e-ffeb-4727-8a7a-539bb0d3e3cc": {
 				ActorType:     "type-A",
 				ActorID:       "type-A.11",
 				Name:          "type-A.11.1",
-				ExecutionTime: now.Add(1 * time.Second),
+				ExecutionTime: 1 * time.Second,
 			},
+			// Actor active on 7de434ce-e285-444f-9857-4d30cade3111
 			"a51dfaa1-dbac-4140-a505-ba3a972c25b8": {
 				ActorType:     "type-A",
 				ActorID:       "type-A.11",
 				Name:          "type-A.11.2",
-				ExecutionTime: now.Add(2 * time.Second),
+				ExecutionTime: 2 * time.Second,
 			},
+			// Actor active on 7de434ce-e285-444f-9857-4d30cade3111
 			"f0093001-649a-4767-b0fa-b26acdc02586": {
 				ActorType:     "type-A",
 				ActorID:       "type-A.11",
 				Name:          "type-A.11.3",
-				ExecutionTime: now.Add(5 * time.Minute),
+				ExecutionTime: 5 * time.Minute,
 			},
+			// Actor active on ded1e507-ed4a-4322-a3a4-b5e8719a9333
 			"76d619d4-ccb1-4069-8c7a-19298330e1ba": {
 				ActorType:     "type-C",
 				ActorID:       "type-C.12",
 				Name:          "type-C.12.1",
-				ExecutionTime: now.Add(1 * time.Second),
+				ExecutionTime: 1 * time.Second,
 			},
+			// Actor active on f4c7d514-3468-48dd-9103-297bf7fe91fd
 			"bda35196-d8bd-4426-a0a3-bc6ba6569b59": {
 				ActorType:     "type-B",
 				ActorID:       "type-B.221",
 				Name:          "type-B.221.1",
-				ExecutionTime: now.Add(2 * time.Second),
+				ExecutionTime: 2 * time.Second,
 			},
+			// Unallocated actor
+			// Can be hosted by 7de434ce-e285-444f-9857-4d30cade3111 and 50d7623f-b165-4f9e-9f05-3b7a1280b222
 			"9885b201-072b-4a0a-9e2c-25fe76ff6356": {
 				ActorType:     "type-A",
 				ActorID:       "type-A.inactivereminder",
 				Name:          "type-A.inactivereminder.1",
-				ExecutionTime: now.Add(2 * time.Second),
+				ExecutionTime: 2 * time.Second,
 			},
-			"996a0e70-f9ed-41f5-bcf2-5be53ec1a894": {
+			// Unallocated actor
+			// Can be hosted by 7de434ce-e285-444f-9857-4d30cade3111 and 50d7623f-b165-4f9e-9f05-3b7a1280b222
+			"0d1851cf-bfa1-47aa-b9f2-8c42737c3d58": {
 				ActorType:     "type-A",
 				ActorID:       "type-A.inactivereminder",
 				Name:          "type-A.inactivereminder.2",
-				ExecutionTime: now.Add(3 * time.Second),
+				ExecutionTime: 2800 * time.Millisecond,
 			},
+			// Unallocated actor
+			// Can be hosted by 7de434ce-e285-444f-9857-4d30cade3111 and 50d7623f-b165-4f9e-9f05-3b7a1280b222
+			"996a0e70-f9ed-41f5-bcf2-5be53ec1a894": {
+				ActorType:     "type-A",
+				ActorID:       "type-A.inactivereminder",
+				Name:          "type-A.inactivereminder.3",
+				ExecutionTime: 3200 * time.Millisecond,
+			},
+			// Unallocated actor
+			// Can be hosted by ded1e507-ed4a-4322-a3a4-b5e8719a9333 and f4c7d514-3468-48dd-9103-297bf7fe91fd
 			"2244b360-a448-4273-a2e1-bbc76791ccfa": {
 				ActorType:     "type-C",
 				ActorID:       "type-C.inactivereminder",
 				Name:          "type-C.inactivereminder.1",
-				ExecutionTime: now,
+				ExecutionTime: 0,
+			},
+			// Unallocated actor
+			// Can be hosted by ded1e507-ed4a-4322-a3a4-b5e8719a9333 and f4c7d514-3468-48dd-9103-297bf7fe91fd
+			"2ba10dcf-55c4-47fb-b297-736928ce7916": {
+				ActorType:     "type-C",
+				ActorID:       "type-C.inactivereminder",
+				Name:          "type-C.inactivereminder.2",
+				ExecutionTime: 1 * time.Second,
+			},
+			// Actor type not supported by any host
+			"e168ee0a-f997-4ea4-8827-3f7a61e5f7a7": {
+				ActorType:     "type-none",
+				ActorID:       "type-none.inactivereminder",
+				Name:          "type-none.inactivereminder.1",
+				ExecutionTime: 1 * time.Second,
 			},
 		},
 	}

@@ -16,6 +16,7 @@ package actorstore
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -175,6 +176,11 @@ func (r FetchedReminder) ScheduledTime() time.Time {
 // Lease returns the value of the lease property.
 func (r FetchedReminder) Lease() any {
 	return r.lease
+}
+
+// String implements fmt.Stringer and is used for debugging
+func (r FetchedReminder) String() string {
+	return fmt.Sprintf("FetchedReminder[key='%s',executionTime='%s',delay='%v',lease='%v']", r.key, r.executionTime.Format(time.RFC3339), time.Until(r.executionTime), r.lease)
 }
 
 // UpdateReminderWithLeaseRequest is the request for UpdateReminderWithLease.

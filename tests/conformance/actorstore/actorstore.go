@@ -77,10 +77,6 @@ func ConformanceTests(t *testing.T, props map[string]string, store actorstore.St
 	}
 	t.Cleanup(cleanupFn)
 
-	t.Run("Load test data", loadTestData(store))
-
-	require.False(t, t.Failed(), "Cannot continue if 'Load test data' test has failed")
-
 	t.Run("Actor state", actorStateTests(store))
 
 	t.Run("Reminders", remindersTest(store))
@@ -94,9 +90,9 @@ func ConformanceTests(t *testing.T, props map[string]string, store actorstore.St
 	})
 }
 
-func loadTestData(store actorstore.Store) func(t *testing.T) {
+func loadActorStateTestData(store actorstore.Store) func(t *testing.T) {
 	return func(t *testing.T) {
 		t.Helper()
-		require.NoError(t, store.LoadTestData(GetTestData()), "Failed to load test data")
+		require.NoError(t, store.LoadActorStateTestData(GetTestData()), "Failed to load actor state test data")
 	}
 }

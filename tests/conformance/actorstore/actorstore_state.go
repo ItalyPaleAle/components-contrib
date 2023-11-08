@@ -33,6 +33,9 @@ import (
 
 func actorStateTests(store actorstore.Store) func(t *testing.T) {
 	return func(t *testing.T) {
+		t.Run("Load test data", loadActorStateTestData(store))
+		require.False(t, t.Failed(), "Cannot continue if 'Load test data' test has failed")
+
 		testData := GetTestData()
 		var addedHostID string
 
@@ -205,7 +208,7 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Run("No host limit", func(t *testing.T) {
-				t.Run("Reload test data", loadTestData(store))
+				t.Run("Reload test data", loadActorStateTestData(store))
 
 				t.Run("Active actor", func(t *testing.T) {
 					// Test vectors: key is "actor-type/actor-id" and value is expected host ID
@@ -517,10 +520,10 @@ func actorStateTests(store actorstore.Store) func(t *testing.T) {
 				}
 
 				// Reload test data before any run
-				loadTestData(store)(t)
+				loadActorStateTestData(store)(t)
 				t.Run("Test without host restrictions", testParallelLookups(nil))
 
-				loadTestData(store)(t)
+				loadActorStateTestData(store)(t)
 				t.Run("Test with host restrictions", testParallelLookups([]string{"f4c7d514-3468-48dd-9103-297bf7fe91fd", "7de434ce-e285-444f-9857-4d30cade3111"}))
 			})
 
