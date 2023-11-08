@@ -13,66 +13,19 @@ limitations under the License.
 
 package postgresql
 
-// Query for performing migration #1
-//
-// fmt.Sprintf arguments:
-// 1. Name of the "hosts" table
-// 2. Name of the "hosts_actor_types" table
-// 3. Name of the "actors" table
-const migration1Query = `CREATE TABLE %[1]s (
-  host_id uuid PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
-  host_address text NOT NULL,
-  host_app_id text NOT NULL,
-  host_actors_api_level integer NOT NULL,
-  host_last_healthcheck timestamp with time zone NOT NULL
-);
+import (
+	// Blank import for the embed package.
+	_ "embed"
+)
 
-CREATE UNIQUE INDEX ON %[1]s (host_address);
-CREATE INDEX ON %[1]s (host_last_healthcheck);
-
-CREATE TABLE %[2]s (
-  host_id uuid NOT NULL,
-  actor_type text NOT NULL,
-  actor_idle_timeout integer NOT NULL,
-  actor_concurrent_reminders integer NOT NULL DEFAULT 0,
-  PRIMARY KEY (host_id, actor_type),
-  FOREIGN KEY (host_id) REFERENCES %[1]s (host_id) ON DELETE CASCADE
-);
-
-CREATE INDEX ON %[2]s (actor_type);
-
-CREATE TABLE %[3]s (
-  actor_type text NOT NULL,
-  actor_id text NOT NULL,
-  host_id uuid NOT NULL,
-  actor_idle_timeout integer NOT NULL,
-  actor_activation timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (actor_type, actor_id),
-  FOREIGN KEY (host_id) REFERENCES %[1]s (host_id) ON DELETE CASCADE
-);`
-
-// Query for performing migration #2
-//
-// fmt.Sprintf arguments:
-// 1. Name of the "reminders" table
-const migration2Query = `CREATE TABLE %[1]s (
-  reminder_id uuid PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(), 
-  actor_type text NOT NULL,
-  actor_id text NOT NULL,
-  reminder_name text NOT NULL,
-  reminder_execution_time timestamp with time zone NOT NULL,
-  reminder_period text,
-  reminder_ttl timestamp with time zone,
-  reminder_data bytea,
-  reminder_lease_id uuid,
-  reminder_lease_time timestamp with time zone,
-  reminder_lease_pid text
-);
-
-CREATE UNIQUE INDEX ON %[1]s (actor_type, actor_id, reminder_name);
-CREATE INDEX ON %[1]s (reminder_execution_time);
-CREATE INDEX ON %[1]s (reminder_lease_pid);
-`
+var (
+	//go:embed queries/migrations-1.sql
+	migration1Query string
+	//go:embed queries/migrations-2.sql
+	migration2Query string
+	//go:embed queries/migrations-3.sql
+	migration3Query string
+)
 
 // Query for looking up an actor, or creating it ex novo.
 //

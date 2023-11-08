@@ -22,13 +22,18 @@ import (
 	"github.com/dapr/kit/metadata"
 )
 
-type pgTable string
+type (
+	pgTable    string
+	pgFunction string
+)
 
 const (
 	pgTableHosts           pgTable = "hosts"
 	pgTableHostsActorTypes pgTable = "hosts_actor_types"
 	pgTableActors          pgTable = "actors"
 	pgTableReminders       pgTable = "reminders"
+
+	pgFunctionFetchReminders pgFunction = "fetch_reminders"
 )
 
 type pgMetadata struct {
@@ -75,4 +80,8 @@ func (m *pgMetadata) InitWithMetadata(meta actorstore.Metadata) error {
 
 func (m pgMetadata) TableName(table pgTable) string {
 	return m.TablePrefix + string(table)
+}
+
+func (m pgMetadata) FunctionName(function pgFunction) string {
+	return m.TablePrefix + string(function)
 }

@@ -101,10 +101,11 @@ func (p *PostgreSQL) performMigrations(ctx context.Context) error {
 	}
 
 	var (
-		hostsTable           = p.metadata.TableName(pgTableHosts)
-		hostsActorTypesTable = p.metadata.TableName(pgTableHostsActorTypes)
-		actorsTable          = p.metadata.TableName(pgTableActors)
-		remindersTable       = p.metadata.TableName(pgTableReminders)
+		hostsTable             = p.metadata.TableName(pgTableHosts)
+		hostsActorTypesTable   = p.metadata.TableName(pgTableHostsActorTypes)
+		actorsTable            = p.metadata.TableName(pgTableActors)
+		remindersTable         = p.metadata.TableName(pgTableReminders)
+		fetchRemindersFunction = p.metadata.FunctionName(pgFunctionFetchReminders)
 	)
 
 	return m.Perform(ctx, []sqlinternal.MigrationFn{
@@ -127,6 +128,17 @@ func (p *PostgreSQL) performMigrations(ctx context.Context) error {
 			)
 			if err != nil {
 				return fmt.Errorf("failed to create reminders table: %w", err)
+			}
+			return nil
+		},
+		// Migration 3: create the function for fetching reminders
+		func(ctx context.Context) error {
+			p.logger.Infof("Creating function for fetching reminders. Function name: '%s'", fetchRemindersFunction)
+			_, err := p.db.Exec(ctx,
+				fmt.Sprintf(migration3Query, fetchRemindersFunction),
+			)
+			if err != nil {
+				return fmt.Errorf("failed to create function for fetching reminders: %w", err)
 			}
 			return nil
 		},

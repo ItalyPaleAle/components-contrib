@@ -262,7 +262,7 @@ func remindersTest(store actorstore.Store) func(t *testing.T) {
 			})
 			require.False(t, t.Failed(), "Cannot continue if 'Load test data' test has failed")
 
-			start := time.Now()
+			start := time.Now().Add(-1 * time.Second)
 
 			t.Run("Fetching reminders", func(t *testing.T) {
 				req := actorstore.FetchNextRemindersRequest{
