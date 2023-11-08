@@ -3,25 +3,21 @@
 --
 -- fmt.Sprintf arguments:
 -- 1. Name of the "fetch_reminders" function
+-- 2. Name of the "reminders" table
+-- 3. Name of the "hosts" table
+-- 4. Name of the "hosts_actor_types" table
+-- 5. Name of the "actors" table
 
 CREATE FUNCTION %[1]s(
   fetch_ahead_interval interval,
   lease_duration interval,
   actor_hosts uuid[],
   actor_types text[],
-  health_check_interval interval
+  health_check_interval interval,
+  max_reminders integer
 )
-RETURNS TABLE (
-  reminder_id uuid,
-  actor_type text,
-  actor_id text,
-  reminder_name text,
-  reminder_delay integer
-)
+RETURNS SETOF uuid
 AS $func$
-
--- One of the queries uses "actor_type" and "actor_id" in an "ON CONFLICT DO" clause, and there seems to be no other way to prevent an error than to set this flag
-#variable_conflict use_column
 
 DECLARE
   r RECORD;
@@ -42,7 +38,6 @@ BEGIN
     reminder_id uuid NOT NULL,
     actor_type TEXT NOT NULL,
     actor_id TEXT NOT NULL,
-    reminder_name text NOT NULL,
     reminder_delay integer NOT NULL,
     host_id uuid
   ) ON COMMIT DROP;
@@ -50,22 +45,22 @@ BEGIN
   -- Start by loading the initial capacity based on how many reminders are currently being executed
   FOR r IN
     SELECT
-      test_hosts_actor_types.host_id,
-      test_hosts_actor_types.actor_type,
+      hat.host_id,
+      hat.actor_type,
       (
-        SELECT COUNT(test_reminders.reminder_id)
-        FROM test_reminders
-        LEFT JOIN test_actors
+        SELECT COUNT(rr.reminder_id)
+        FROM %[2]s AS rr
+        LEFT JOIN %[5]s
           USING (actor_id, actor_type)
         WHERE
-          test_actors.host_id = test_hosts_actor_types.host_id
-          AND test_reminders.actor_type = test_hosts_actor_types.actor_type
-          AND test_reminders.reminder_lease_time >= CURRENT_TIMESTAMP - lease_duration
+          %[5]s.host_id = hat.host_id
+          AND rr.actor_type = hat.actor_type
+          AND rr.reminder_lease_time >= CURRENT_TIMESTAMP - lease_duration
       ) AS count,
-      test_hosts_actor_types.actor_concurrent_reminders AS max
-    FROM test_hosts_actor_types
+      hat.actor_concurrent_reminders AS max
+    FROM %[4]s AS hat
     WHERE 
-      test_hosts_actor_types.host_id = ANY(actor_hosts)
+      hat.host_id = ANY(actor_hosts)
   LOOP
     IF (r.max <= 0 OR r.count < r.max) THEN
       INSERT INTO temp_capacities VALUES (
@@ -80,34 +75,36 @@ BEGIN
   -- This also loads reminders for actors that are not active, but which can be executed on hosts currently connected
   FOR r IN
     SELECT
-      test_reminders.reminder_id,  test_reminders.reminder_name,
-      test_reminders.actor_type, test_reminders.actor_id, test_actors.host_id,
-      GREATEST(EXTRACT(EPOCH FROM test_reminders.reminder_execution_time - CURRENT_TIMESTAMP)::int, 0) AS reminder_delay,
+      rr.reminder_id,
+      rr.actor_type, rr.actor_id, %[5]s.host_id,
+      EXTRACT(EPOCH FROM rr.reminder_execution_time - CURRENT_TIMESTAMP)::int AS reminder_delay,
       row_number() OVER (
-        PARTITION BY test_actors.host_id, test_reminders.actor_type ORDER BY test_reminders.reminder_execution_time ASC
+        PARTITION BY %[5]s.host_id, rr.actor_type ORDER BY rr.reminder_execution_time ASC
       ) AS row_number,
       capacity
-    FROM test_reminders
-    LEFT JOIN test_actors
+    FROM %[2]s AS rr
+    LEFT JOIN %[5]s
       USING (actor_type, actor_id)
-    LEFT JOIN test_hosts
-      ON test_actors.host_id = test_hosts.host_id AND test_hosts.host_last_healthcheck >= CURRENT_TIMESTAMP - health_check_interval
+    LEFT JOIN %[3]s
+      ON %[5]s.host_id = %[3]s.host_id AND %[3]s.host_last_healthcheck >= CURRENT_TIMESTAMP - health_check_interval
     LEFT JOIN temp_capacities
-      ON test_hosts.host_id = temp_capacities.host_id AND test_reminders.actor_type = temp_capacities.actor_type
+      ON %[3]s.host_id = temp_capacities.host_id AND rr.actor_type = temp_capacities.actor_type
     WHERE 
-      test_reminders.reminder_execution_time < CURRENT_TIMESTAMP + fetch_ahead_interval
+      rr.reminder_execution_time < CURRENT_TIMESTAMP + fetch_ahead_interval
       AND (
-        test_reminders.reminder_lease_id IS NULL
-        OR test_reminders.reminder_lease_time IS NULL
-        OR test_reminders.reminder_lease_time < CURRENT_TIMESTAMP - lease_duration
+        rr.reminder_lease_id IS NULL
+        OR rr.reminder_lease_time IS NULL
+        OR rr.reminder_lease_time < CURRENT_TIMESTAMP - lease_duration
       )
       AND (
         (
-            test_hosts.host_id IS NULL
-            AND test_reminders.actor_type = ANY(actor_types)
+            %[3]s.host_id IS NULL
+            AND rr.actor_type = ANY(actor_types)
         )
         OR capacity > 0
       )
+    ORDER BY reminder_delay ASC
+    LIMIT max_reminders
   LOOP
     -- RAISE NOTICE 'record: %', r;
     -- For the reminders that have an active actor, filter based on the capacity
@@ -122,19 +119,14 @@ BEGIN
       -- RAISE NOTICE 'NOT NULL host_id: %', r;
 
       -- Return the row
-      reminder_id := r.reminder_id;
-      actor_type := r.actor_type;
-      actor_id := r.actor_id;
-      reminder_name := r.reminder_name;
-      reminder_delay := r.reminder_delay;
-      RETURN NEXT;
+      RETURN NEXT (r.reminder_id);
     ELSIF r.host_id IS NULL THEN
       -- For reminders that don't have an active actor, we need to activate an actor
       -- Because multiple reminders could be waiting on the same un-allocated actor, we first need to collect them
       INSERT INTO temp_allocate_actors
-          (reminder_id, actor_type, actor_id, reminder_name, reminder_delay)
+          (reminder_id, actor_type, actor_id, reminder_delay)
         VALUES
-          (r.reminder_id, r.actor_type, r.actor_id, r.reminder_name, r.reminder_delay);
+          (r.reminder_id, r.actor_type, r.actor_id, r.reminder_delay);
 
       -- RAISE NOTICE 'NULL host_id: %', r;
     END IF;
@@ -168,13 +160,13 @@ BEGIN
     -- Create the actor now
     -- Here we can do an upsert because we know that, if the row is present, it means the actor was active on a host that is dead but not GC'd yet
     -- We set the activation to the current timestamp + the delay
-    INSERT INTO test_actors
+    INSERT INTO %[5]s
       (actor_type, actor_id, host_id, actor_activation, actor_idle_timeout)
     SELECT 
-      r.actor_type, r.actor_id, a_host_id, (CURRENT_TIMESTAMP + r.reminder_delay * interval '1 second'),
+      r.actor_type, r.actor_id, a_host_id, (CURRENT_TIMESTAMP + GREATEST(r.reminder_delay, 0) * interval '1 second'),
       (
         SELECT hat.actor_idle_timeout
-        FROM test_hosts_actor_types AS hat
+        FROM %[4]s AS hat
         WHERE hat.actor_type = r.actor_type AND hat.host_id = a_host_id
       )
       ON CONFLICT (actor_type, actor_id) DO UPDATE
@@ -189,8 +181,9 @@ BEGIN
   END LOOP;
 
   -- Finally, let's return also the reminders for actors that have just been allocated
+  -- We need to filter host_id NULL values because some actors may not have been allocated sucessfully
   RETURN QUERY
-    SELECT t.reminder_id, t.actor_type, t.actor_id, t.reminder_name, t.reminder_delay
+    SELECT t.reminder_id
     FROM temp_allocate_actors AS t
     WHERE t.host_id IS NOT NULL;
 

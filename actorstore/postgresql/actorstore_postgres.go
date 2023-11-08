@@ -135,7 +135,7 @@ func (p *PostgreSQL) performMigrations(ctx context.Context) error {
 		func(ctx context.Context) error {
 			p.logger.Infof("Creating function for fetching reminders. Function name: '%s'", fetchRemindersFunction)
 			_, err := p.db.Exec(ctx,
-				fmt.Sprintf(migration3Query, fetchRemindersFunction),
+				fmt.Sprintf(migration3Query, fetchRemindersFunction, remindersTable, hostsTable, hostsActorTypesTable, actorsTable),
 			)
 			if err != nil {
 				return fmt.Errorf("failed to create function for fetching reminders: %w", err)

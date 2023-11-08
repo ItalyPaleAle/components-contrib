@@ -153,9 +153,10 @@ func (p *PostgreSQL) FetchNextReminders(ctx context.Context, req actorstore.Fetc
 	defer queryCancel()
 
 	rows, _ := p.db.Query(queryCtx,
-		fmt.Sprintf(remindersFetchQuery, p.metadata.TableName(pgTableReminders), p.metadata.TableName(pgTableActors)),
+		fmt.Sprintf(remindersFetchQuery, p.metadata.TableName(pgTableReminders), p.metadata.TableName(pgTableActors), p.metadata.FunctionName(pgFunctionFetchReminders)),
 		cfg.RemindersFetchAheadInterval, cfg.RemindersLeaseDuration,
-		req.ActorTypes, req.Hosts,
+		req.Hosts, req.ActorTypes,
+		p.metadata.Config.FailedInterval(),
 		cfg.RemindersFetchAheadBatchSize, p.metadata.PID,
 	)
 	defer rows.Close()

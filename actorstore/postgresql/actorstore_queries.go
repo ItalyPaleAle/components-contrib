@@ -162,45 +162,29 @@ const lookupActorQueryWithHostRestriction = `WITH new_row AS (
 // Query arguments:
 // 1. Fetch ahead interval, as a `time.Duration`
 // 2. Lease duration, as a `time.Duration`
-// 3. Actor types that can be served by hosts connected to the current instance of the actors service, as a `string[]`
-// 4. IDs of actor hosts that have an active connection to the current instance of the actors service, as a `string[]`
-// 5. Maximum batch size, as an `int`
-// 6. Process ID, as a `string`
+// 3. IDs of actor hosts that have an active connection to the current instance of the actors service, as a `string[]`
+// 4. Actor types that can be served by hosts connected to the current instance of the actors service, as a `string[]`
+// 5. Health check interval, as `time.Duration`
+// 6. Maximum batch size, as an `int`
+// 7. Process ID, as a `string`
 //
 // fmt.Sprintf arguments:
 // 1. Name of the "reminders" table
-// 2. Name of the "actors" table
-const remindersFetchQuery = `UPDATE %[1]s
+// 2. Name of the "fetch_reminders" function
+const remindersFetchQuery = `
+UPDATE %[1]s
 SET
     reminder_lease_id = gen_random_uuid(),
     reminder_lease_time = CURRENT_TIMESTAMP,
-    reminder_lease_pid = $6
+    reminder_lease_pid = $7
 WHERE reminder_id IN (
-    SELECT reminder_id
-    FROM %[1]s
-    LEFT JOIN %[2]s
-        ON %[2]s.actor_type = %[1]s.actor_type AND %[2]s.actor_id = %[1]s.actor_id
-    WHERE 
-        %[1]s.reminder_execution_time < CURRENT_TIMESTAMP + $1::interval
-        AND (
-            %[1]s.reminder_lease_id IS NULL
-            OR %[1]s.reminder_lease_time IS NULL
-            OR %[1]s.reminder_lease_time < CURRENT_TIMESTAMP - $2::interval
-        )
-        AND (
-            (
-                %[2]s.host_id IS NULL
-                AND %[1]s.actor_type = ANY($3)
-            )
-            OR %[2]s.host_id = ANY($4)
-        )
-    ORDER BY %[1]s.reminder_execution_time ASC
-    LIMIT $5
+    SELECT * FROM %[3]s($1, $2, $3, $4, $5, $6)
 )
 RETURNING
     reminder_id, actor_type, actor_id, reminder_name,
     EXTRACT(EPOCH FROM reminder_execution_time - CURRENT_TIMESTAMP)::int,
-    reminder_lease_id`
+    reminder_lease_id
+`
 
 // Query for creating (or replacing) a reminder and acquiring a lease at the same time.
 //
